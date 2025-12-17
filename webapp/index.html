@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CRM</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+    <div class="app">
+        
+        <!-- ==================== ШАПКА ==================== -->
+        <header class="header">
+            <div class="header-left">
+                <span class="logo">📋</span>
+                <span class="title" id="page-title">Моя CRM</span>
+            </div>
+            <button class="theme-toggle" onclick="toggleTheme()">🌙</button>
+        </header>
+
+        <!-- ==================== СТРАНИЦА: ГЛАВНАЯ ==================== -->
+        <div class="page active" id="page-home">
+            
+            <!-- Статистика -->
+            <div class="stats-card">
+                <div class="stats-header">
+                    <span class="greeting" id="greeting">👋 Привет!</span>
+                    <span class="stats-date" id="current-date"></span>
+                </div>
+                <div class="stats-row">
+                    <div class="stat">
+                        <span class="stat-icon">✅</span>
+                        <span class="stat-value" id="stat-done">0</span>
+                        <span class="stat-label">Выполнено</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-icon">📋</span>
+                        <span class="stat-value" id="stat-total">0</span>
+                        <span class="stat-label">Всего</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-icon">🎯</span>
+                        <span class="stat-value" id="stat-percent">0%</span>
+                        <span class="stat-label">Прогресс</span>
+                    </div>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill"></div>
+                </div>
+            </div>
+
+            <!-- Быстрые действия -->
+            <div class="quick-actions">
+                <button class="quick-action" onclick="showAddTask()">
+                    <span class="quick-icon">➕</span>
+                    <span>Новая задача</span>
+                </button>
+                <button class="quick-action" onclick="switchPage('calendar')">
+                    <span class="quick-icon">📅</span>
+                    <span>Календарь</span>
+                </button>
+            </div>
+
+            <!-- Сегодняшние задачи -->
+            <div class="section">
+                <div class="section-header">
+                    <h2>🔥 Сегодня</h2>
+                    <span class="section-count" id="today-count">0</span>
+                </div>
+                <div class="task-list" id="today-tasks">
+                    <div class="empty-state">
+                        <span class="empty-icon">🎉</span>
+                        <span>На сегодня задач нет!</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Срочные задачи -->
+            <div class="section">
+                <div class="section-header">
+                    <h2>🔴 Срочные</h2>
+                    <span class="section-count" id="urgent-count">0</span>
+                </div>
+                <div class="task-list" id="urgent-tasks"></div>
+            </div>
+
+        </div>
+
+        <!-- ==================== СТРАНИЦА: ЗАДАЧИ ==================== -->
+        <div class="page" id="page-tasks">
+            
+            <!-- Табы -->
+            <div class="tabs">
+                <button class="tab active" data-view="board">📊 Доска</button>
+                <button class="tab" data-view="list">📋 Список</button>
+            </div>
+
+            <!-- Доска (Канбан) -->
+            <div class="view active" id="view-board">
+                <div class="board" id="board"></div>
+            </div>
+
+            <!-- Список -->
+            <div class="view" id="view-list">
+                <div class="filters">
+                    <button class="filter-btn active" data-filter="all">Все</button>
+                    <button class="filter-btn" data-filter="todo">Активные</button>
+                    <button class="filter-btn" data-filter="done">Выполненные</button>
+                </div>
+                <div class="task-list" id="task-list"></div>
+            </div>
+
+        </div>
+
+        <!-- ==================== СТРАНИЦА: КАЛЕНДАРЬ ==================== -->
+        <div class="page" id="page-calendar">
+            
+            <!-- Навигация по месяцам -->
+            <div class="calendar-nav">
+                <button class="cal-nav-btn" onclick="prevMonth()">◀</button>
+                <span class="cal-month" id="cal-month">Декабрь 2024</span>
+                <button class="cal-nav-btn" onclick="nextMonth()">▶</button>
+            </div>
+
+            <!-- Дни недели -->
+            <div class="calendar-weekdays">
+                <span>Пн</span>
+                <span>Вт</span>
+                <span>Ср</span>
+                <span>Чт</span>
+                <span>Пт</span>
+                <span>Сб</span>
+                <span>Вс</span>
+            </div>
+
+            <!-- Сетка календаря -->
+            <div class="calendar-grid" id="calendar-grid"></div>
+
+            <!-- Задачи выбранного дня -->
+            <div class="calendar-tasks">
+                <div class="section-header">
+                    <h2 id="selected-date-title">📅 Выберите день</h2>
+                </div>
+                <div class="task-list" id="calendar-task-list">
+                    <div class="empty-state">
+                        <span class="empty-icon">📅</span>
+                        <span>Нажмите на день</span>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ==================== СТРАНИЦА: ПРОФИЛЬ ==================== -->
+        <div class="page" id="page-profile">
+            
+            <!-- Аватар и имя -->
+            <div class="profile-header">
+                <div class="profile-avatar" id="profile-avatar">👤</div>
+                <div class="profile-name" id="profile-name">Пользователь</div>
+                <div class="profile-username" id="profile-username">@username</div>
+            </div>
+
+            <!-- Статистика профиля -->
+            <div class="profile-stats">
+                <div class="profile-stat">
+                    <span class="profile-stat-value" id="profile-total">0</span>
+                    <span class="profile-stat-label">Всего задач</span>
+                </div>
+                <div class="profile-stat">
+                    <span class="profile-stat-value" id="profile-done">0</span>
+                    <span class="profile-stat-label">Выполнено</span>
+                </div>
+                <div class="profile-stat">
+                    <span class="profile-stat-value" id="profile-streak">0</span>
+                    <span class="profile-stat-label">Дней подряд</span>
+                </div>
+            </div>
+
+            <!-- Достижения -->
+            <div class="section">
+                <div class="section-header">
+                    <h2>🏆 Достижения</h2>
+                </div>
+                <div class="achievements" id="achievements">
+                    <div class="achievement locked">
+                        <span class="achievement-icon">🌟</span>
+                        <span class="achievement-name">Первая задача</span>
+                    </div>
+                    <div class="achievement locked">
+                        <span class="achievement-icon">🔥</span>
+                        <span class="achievement-name">5 задач за день</span>
+                    </div>
+                    <div class="achievement locked">
+                        <span class="achievement-icon">💪</span>
+                        <span class="achievement-name">10 задач выполнено</span>
+                    </div>
+                    <div class="achievement locked">
+                        <span class="achievement-icon">🚀</span>
+                        <span class="achievement-name">50 задач выполнено</span>
+                    </div>
+                    <div class="achievement locked">
+                        <span class="achievement-icon">👑</span>
+                        <span class="achievement-name">100 задач выполнено</span>
+                    </div>
+                    <div class="achievement locked">
+                        <span class="achievement-icon">📅</span>
+                        <span class="achievement-name">7 дней подряд</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Настройки -->
+            <div class="section">
+                <div class="section-header">
+                    <h2>⚙️ Настройки</h2>
+                </div>
+                <div class="settings-list">
+                    <div class="settings-item" onclick="toggleTheme()">
+                        <span>🌙 Тёмная тема</span>
+                        <div class="toggle" id="theme-toggle-btn"></div>
+                    </div>
+                    <div class="settings-item">
+                        <span>🔔 Уведомления</span>
+                        <div class="toggle active"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Пространства -->
+            <div class="section">
+                <div class="section-header">
+                    <h2>📂 Пространства</h2>
+                </div>
+                <div class="workspaces-list" id="workspaces-list"></div>
+            </div>
+
+        </div>
+
+        <!-- ==================== КНОПКА FAB ==================== -->
+        <button class="fab" onclick="showAddTask()">➕</button>
+
+        <!-- ==================== НИЖНЕЕ МЕНЮ ==================== -->
+        <nav class="bottom-nav">
+            <button class="nav-btn active" data-page="home" onclick="switchPage('home')">
+                <span class="nav-icon">🏠</span>
+                <span class="nav-label">Главная</span>
+            </button>
+            <button class="nav-btn" data-page="tasks" onclick="switchPage('tasks')">
+                <span class="nav-icon">📋</span>
+                <span class="nav-label">Задачи</span>
+            </button>
+            <button class="nav-btn" data-page="calendar" onclick="switchPage('calendar')">
+                <span class="nav-icon">📅</span>
+                <span class="nav-label">Календарь</span>
+            </button>
+            <button class="nav-btn" data-page="profile" onclick="switchPage('profile')">
+                <span class="nav-icon">👤</span>
+                <span class="nav-label">Профиль</span>
+            </button>
+        </nav>
+
+    </div>
+
+    <!-- ==================== МОДАЛКА: ДОБАВЛЕНИЕ ==================== -->
+    <div class="modal" id="modal-add">
+        <div class="modal-overlay" onclick="closeModal()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>➕ Новая задача</h3>
+                <button class="modal-close" onclick="closeModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="input-group">
+                    <label>Название</label>
+                    <input type="text" id="task-title" placeholder="Что нужно сделать?" class="input">
+                </div>
+                <div class="input-group">
+                    <label>Описание</label>
+                    <textarea id="task-desc" placeholder="Подробности (необязательно)" class="input textarea"></textarea>
+                </div>
+                <div class="input-group">
+                    <label>Приоритет</label>
+                    <div class="priority-buttons">
+                        <button class="priority-btn" data-priority="low">
+                            <span>🟢</span>
+                            <span>Низкий</span>
+                        </button>
+                        <button class="priority-btn selected" data-priority="medium">
+                            <span>🟡</span>
+                            <span>Средний</span>
+                        </button>
+                        <button class="priority-btn" data-priority="high">
+                            <span>🔴</span>
+                            <span>Высокий</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="input-group">
+                    <label>Срок выполнения</label>
+                    <input type="date" id="task-due" class="input">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal()">Отмена</button>
+                <button class="btn btn-primary" onclick="createTask()">✨ Создать</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== МОДАЛКА: ПРОСМОТР ЗАДАЧИ ==================== -->
+    <div class="modal" id="modal-task">
+        <div class="modal-overlay" onclick="closeModal()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-task-priority" id="modal-priority"></div>
+                <h3 id="view-task-title">Задача</h3>
+                <button class="modal-close" onclick="closeModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="task-detail">
+                    <span class="task-detail-label">📝 Описание</span>
+                    <p id="view-task-desc" class="task-description">Без описания</p>
+                </div>
+                <div class="task-details-row">
+                    <div class="task-detail">
+                        <span class="task-detail-label">📊 Статус</span>
+                        <span id="view-task-status" class="task-status"></span>
+                    </div>
+                    <div class="task-detail">
+                        <span class="task-detail-label">🎯 Приоритет</span>
+                        <span id="view-task-priority-text"></span>
+                    </div>
+                </div>
+                <div class="task-detail">
+                    <span class="task-detail-label">📅 Создана</span>
+                    <span id="view-task-date"></span>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="action-btn" onclick="toggleCurrentTask()">
+                    <span>✅</span>
+                    <span id="toggle-btn-text">Выполнено</span>
+                </button>
+                <button class="action-btn" onclick="editCurrentTask()">
+                    <span>✏️</span>
+                    <span>Изменить</span>
+                </button>
+                <button class="action-btn danger" onclick="deleteCurrentTask()">
+                    <span>🗑</span>
+                    <span>Удалить</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== УВЕДОМЛЕНИЕ ==================== -->
+    <div class="toast" id="toast">
+        <span class="toast-icon">✅</span>
+        <span class="toast-text">Готово!</span>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
