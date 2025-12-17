@@ -10,6 +10,7 @@ let selectedPriority = 'medium';
 let currentDate = new Date();
 let selectedDate = null;
 let currentFilter = 'all';
+let isEditing = false;
 
 // ==================== ИНИЦИАЛИЗАЦИЯ ====================
 
@@ -18,35 +19,25 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function init() {
-    // Telegram WebApp
     if (tg) {
         tg.ready();
         tg.expand();
         tg.enableClosingConfirmation();
         userId = tg.initDataUnsafe?.user?.id;
         
-        // Тема из Telegram
         if (tg.colorScheme === 'light') {
             document.body.classList.add('light-theme');
             document.querySelector('.theme-toggle').textContent = '☀️';
         }
     }
     
-    // Для тестирования без Telegram
     if (!userId) {
         userId = 123456789;
     }
     
-    // Показываем текущую дату
     updateCurrentDate();
-    
-    // Загружаем данные
     await loadUserData();
-    
-    // Обработчики событий
     setupEventListeners();
-    
-    // Рендерим календарь
     renderCalendar();
 }
 
@@ -65,32 +56,24 @@ async function loadUserData() {
         const data = await response.json();
         userData = data;
         
-        // Обновляем приветствие
         const name = tg?.initDataUnsafe?.user?.first_name || data.user.full_name || 'Друг';
         document.getElementById('greeting').textContent = `👋 Привет, ${name}!`;
         
-        // Профиль
         document.getElementById('profile-name').textContent = data.user.full_name || 'Пользователь';
         document.getElementById('profile-username').textContent = data.user.username ? `@${data.user.username}` : '';
         
-        // Статистика
         updateStats(data.stats);
         
-        // Профиль статистика
         document.getElementById('profile-total').textContent = data.stats.total;
         document.getElementById('profile-done').textContent = data.stats.done;
         
-        // Загружаем личное пространство
         const personal = data.workspaces.find(w => w.is_personal);
         if (personal) {
             currentWorkspaceId = personal.id;
             await loadWorkspace(personal.id);
         }
         
-        // Рендерим пространства
         renderWorkspaces(data.workspaces);
-        
-        // Обновляем достижения
         updateAchievements(data.stats.done);
         
     } catch (error) {
@@ -109,13 +92,10 @@ async function loadWorkspace(workspaceId) {
         const data = await response.json();
         allTasks = data.tasks || [];
         
-        // Рендерим всё
         renderBoard(data.funnels);
         renderTaskList(allTasks);
         renderTodayTasks();
         renderUrgentTasks();
-        
-        // Обновляем календарь
         renderCalendar();
         
     } catch (error) {
@@ -188,7 +168,6 @@ function renderTaskCard(task) {
 function renderTaskList(tasks) {
     const list = document.getElementById('task-list');
     
-    // Применяем фильтр
     let filteredTasks = tasks;
     if (currentFilter === 'todo') {
         filteredTasks = tasks.filter(t => t.status !== 'done');
@@ -215,6 +194,10 @@ function renderTaskItem(task) {
                 <div class="task-meta">
                     <span class="task-meta-item">📅 ${formatDate(task.created_at)}</span>
                 </div>
+            </div>
+            <div class="task-actions-mini">
+                <button class="mini-btn edit" onclick="event.stopPropagation(); editTask(${task.id})">✏️</button>
+                <button class="mini-btn delete" onclick="event.stopPropagation(); confirmDeleteTask(${task.id})">🗑</button>
             </div>
         </div>
     `;
@@ -280,38 +263,31 @@ function renderCalendar() {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
     
-    // Название месяца
     const monthNames = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 
                         'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
     monthLabel.textContent = `${monthNames[month]} ${year}`;
     
-    // Первый день месяца
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
     
-    // День недели первого дня (0 = воскресенье, преобразуем)
     let startDay = firstDay.getDay();
-    startDay = startDay === 0 ? 6 : startDay - 1; // Пн = 0
+    startDay = startDay === 0 ? 6 : startDay - 1;
     
-    // Дни предыдущего месяца
     const prevMonthLastDay = new Date(year, month, 0).getDate();
     
     let html = '';
     
-    // Дни предыдущего месяца
     for (let i = startDay - 1; i >= 0; i--) {
         const day = prevMonthLastDay - i;
         html += `<div class="calendar-day other-month">${day}</div>`;
     }
     
-    // Дни текущего месяца
     const today = new Date();
     
     for (let day = 1; day <= lastDay.getDate(); day++) {
         const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const isToday = today.getDate() === day && today.getMonth() === month && today.getFullYear() === year;
         
-        // Проверяем есть ли задачи на этот день
         const hasTasks = allTasks.some(t => {
             const taskDate = new Date(t.created_at);
             return taskDate.getDate() === day && taskDate.getMonth() === month && taskDate.getFullYear() === year;
@@ -325,7 +301,6 @@ function renderCalendar() {
         html += `<div class="${classes.join(' ')}" onclick="selectDate('${dateStr}', ${day})">${day}</div>`;
     }
     
-    // Дни следующего месяца
     const totalCells = startDay + lastDay.getDate();
     const remainingCells = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
     
@@ -352,7 +327,6 @@ function selectDate(dateStr, day) {
     selectedDate = dateStr;
     renderCalendar();
     
-    // Показываем задачи этого дня
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
     
@@ -381,10 +355,10 @@ function selectDate(dateStr, day) {
 
 function updateAchievements(doneCount) {
     const achievements = document.querySelectorAll('.achievement');
-    const thresholds = [1, 5, 10, 50, 100, 7]; // Количества для разблокировки
+    const thresholds = [1, 5, 10, 50, 100, 7];
     
     achievements.forEach((ach, index) => {
-        if (index < 5) { // Первые 5 - по количеству задач
+        if (index < 5) {
             if (doneCount >= thresholds[index]) {
                 ach.classList.remove('locked');
                 ach.classList.add('unlocked');
@@ -396,18 +370,13 @@ function updateAchievements(doneCount) {
 // ==================== НАВИГАЦИЯ ====================
 
 function switchPage(pageName) {
-    // Скрываем все страницы
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-    
-    // Показываем нужную
     document.getElementById(`page-${pageName}`).classList.add('active');
     
-    // Обновляем навигацию
     document.querySelectorAll('.nav-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.page === pageName);
     });
     
-    // Заголовок
     const titles = {
         home: 'Моя CRM',
         tasks: 'Задачи',
@@ -416,7 +385,6 @@ function switchPage(pageName) {
     };
     document.getElementById('page-title').textContent = titles[pageName] || 'CRM';
     
-    // Скрываем FAB на некоторых страницах
     const fab = document.querySelector('.fab');
     fab.style.display = pageName === 'profile' ? 'none' : 'flex';
     
@@ -433,7 +401,6 @@ async function switchWorkspace(workspaceId) {
 // ==================== ОБРАБОТЧИКИ СОБЫТИЙ ====================
 
 function setupEventListeners() {
-    // Табы на странице задач
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', () => {
             const view = tab.dataset.view;
@@ -448,7 +415,6 @@ function setupEventListeners() {
         });
     });
     
-    // Фильтры
     document.querySelectorAll('.filter-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             currentFilter = btn.dataset.filter;
@@ -461,7 +427,6 @@ function setupEventListeners() {
         });
     });
     
-    // Приоритеты в модалке
     document.querySelectorAll('.priority-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('.priority-btn').forEach(b => b.classList.remove('selected'));
@@ -475,9 +440,15 @@ function setupEventListeners() {
 // ==================== МОДАЛЬНЫЕ ОКНА ====================
 
 function showAddTask() {
+    isEditing = false;
+    currentTask = null;
+    
     document.getElementById('task-title').value = '';
     document.getElementById('task-desc').value = '';
     document.getElementById('task-due').value = '';
+    
+    document.getElementById('modal-add-title').textContent = '➕ Новая задача';
+    document.getElementById('modal-add-btn').textContent = '✨ Создать';
     
     selectedPriority = 'medium';
     document.querySelectorAll('.priority-btn').forEach(b => {
@@ -485,6 +456,29 @@ function showAddTask() {
     });
     
     openModal('modal-add');
+}
+
+function editTask(taskId) {
+    const task = allTasks.find(t => t.id === taskId);
+    if (!task) return;
+    
+    isEditing = true;
+    currentTask = task;
+    
+    document.getElementById('task-title').value = task.title;
+    document.getElementById('task-desc').value = task.description || '';
+    document.getElementById('task-due').value = task.due_date ? task.due_date.split('T')[0] : '';
+    
+    document.getElementById('modal-add-title').textContent = '✏️ Редактировать';
+    document.getElementById('modal-add-btn').textContent = '💾 Сохранить';
+    
+    selectedPriority = task.priority || 'medium';
+    document.querySelectorAll('.priority-btn').forEach(b => {
+        b.classList.toggle('selected', b.dataset.priority === selectedPriority);
+    });
+    
+    openModal('modal-add');
+    haptic('light');
 }
 
 function showTask(taskId) {
@@ -496,22 +490,18 @@ function showTask(taskId) {
     document.getElementById('view-task-title').textContent = task.title;
     document.getElementById('view-task-desc').textContent = task.description || 'Без описания';
     
-    // Приоритет
     const modalPriority = document.getElementById('modal-priority');
     modalPriority.className = 'modal-task-priority ' + task.priority;
     
     const priorityTexts = { high: '🔴 Высокий', medium: '🟡 Средний', low: '🟢 Низкий' };
     document.getElementById('view-task-priority-text').textContent = priorityTexts[task.priority] || 'Средний';
     
-    // Статус
     const statusEl = document.getElementById('view-task-status');
     statusEl.textContent = task.status === 'done' ? 'Выполнена' : 'В работе';
     statusEl.className = 'task-status ' + (task.status === 'done' ? 'done' : 'todo');
     
-    // Дата
     document.getElementById('view-task-date').textContent = formatDateFull(task.created_at);
     
-    // Текст кнопки
     document.getElementById('toggle-btn-text').textContent = task.status === 'done' ? 'Открыть' : 'Выполнено';
     
     openModal('modal-task');
@@ -525,11 +515,12 @@ function openModal(modalId) {
 function closeModal() {
     document.querySelectorAll('.modal').forEach(m => m.classList.remove('active'));
     currentTask = null;
+    isEditing = false;
 }
 
 // ==================== ДЕЙСТВИЯ С ЗАДАЧАМИ ====================
 
-async function createTask() {
+async function saveTask() {
     const title = document.getElementById('task-title').value.trim();
     const description = document.getElementById('task-desc').value.trim();
     const dueDate = document.getElementById('task-due').value;
@@ -541,28 +532,58 @@ async function createTask() {
     }
     
     try {
-        const response = await fetch(`/api/tasks/${currentWorkspaceId}/${userId}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                title,
-                description: description || null,
-                priority: selectedPriority
-            })
-        });
+        let response;
         
-        if (response.ok) {
-            closeModal();
-            await loadUserData();
-            showToast('✅ Задача создана!');
-            haptic('success');
+        if (isEditing && currentTask) {
+            // Редактирование
+            response = await fetch(`/api/task/${currentTask.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title,
+                    description: description || null,
+                    priority: selectedPriority
+                })
+            });
+            
+            if (response.ok) {
+                closeModal();
+                await loadUserData();
+                showToast('✅ Задача обновлена!');
+                haptic('success');
+            }
         } else {
-            showToast('❌ Ошибка создания', 'error');
+            // Создание
+            response = await fetch(`/api/tasks/${currentWorkspaceId}/${userId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title,
+                    description: description || null,
+                    priority: selectedPriority
+                })
+            });
+            
+            if (response.ok) {
+                closeModal();
+                await loadUserData();
+                showToast('✅ Задача создана!');
+                haptic('success');
+            }
+        }
+        
+        if (!response.ok) {
+            showToast('❌ Ошибка сохранения', 'error');
         }
     } catch (error) {
         console.error('Error:', error);
         showToast('❌ Ошибка сети', 'error');
     }
+}
+
+// Для совместимости со старым кодом
+async function createTask() {
+    await saveTask();
 }
 
 async function toggleTask(taskId) {
@@ -593,97 +614,45 @@ async function toggleCurrentTask() {
 
 function editCurrentTask() {
     if (!currentTask) return;
-    
     closeModal();
-    
-    // Открываем модалку добавления с данными текущей задачи
-    document.getElementById('task-title').value = currentTask.title;
-    document.getElementById('task-desc').value = currentTask.description || '';
-    
-    selectedPriority = currentTask.priority;
-    document.querySelectorAll('.priority-btn').forEach(b => {
-        b.classList.toggle('selected', b.dataset.priority === currentTask.priority);
-    });
-    
-    // Меняем функцию кнопки на обновление
-    const createBtn = document.querySelector('#modal-add .btn-primary');
-    createBtn.textContent = '💾 Сохранить';
-    createBtn.onclick = updateCurrentTask;
-    
-    openModal('modal-add');
+    editTask(currentTask.id);
 }
 
-async function updateCurrentTask() {
-    if (!currentTask) return;
+function confirmDeleteTask(taskId) {
+    const task = allTasks.find(t => t.id === taskId);
+    if (!task) return;
     
-    const title = document.getElementById('task-title').value.trim();
-    const description = document.getElementById('task-desc').value.trim();
+    currentTask = task;
     
-    if (!title) {
-        showToast('⚠️ Введите название', 'warning');
-        return;
-    }
-    
+    document.getElementById('delete-task-title').textContent = task.title;
+    openModal('modal-delete');
+}
+
+async function deleteTask(taskId) {
     try {
-        const response = await fetch(`/api/task/${currentTask.id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                title,
-                description: description || null,
-                priority: selectedPriority
-            })
-        });
-        
-        if (response.ok) {
-            closeModal();
-            
-            // Возвращаем кнопку в исходное состояние
-            const createBtn = document.querySelector('#modal-add .btn-primary');
-            createBtn.textContent = '✨ Создать';
-            createBtn.onclick = createTask;
-            
-            await loadUserData();
-            showToast('✅ Сохранено!');
-            haptic('success');
-        }
-    } catch (error) {
-        console.error('Error:', error);
-        showToast('❌ Ошибка', 'error');
-    }
-}
-
-async function deleteCurrentTask() {
-    if (!currentTask) return;
-    
-    // Подтверждение
-    if (tg) {
-        tg.showConfirm('Удалить задачу?', async (confirmed) => {
-            if (confirmed) {
-                await performDelete();
-            }
-        });
-    } else {
-        if (confirm('Удалить задачу?')) {
-            await performDelete();
-        }
-    }
-}
-
-async function performDelete() {
-    try {
-        const response = await fetch(`/api/task/${currentTask.id}`, { method: 'DELETE' });
+        const response = await fetch(`/api/task/${taskId}`, { method: 'DELETE' });
         
         if (response.ok) {
             closeModal();
             await loadUserData();
-            showToast('🗑 Удалено');
+            showToast('🗑 Задача удалена');
             haptic('warning');
         }
     } catch (error) {
         console.error('Error:', error);
         showToast('❌ Ошибка', 'error');
     }
+}
+
+async function confirmDelete() {
+    if (currentTask) {
+        await deleteTask(currentTask.id);
+    }
+}
+
+async function deleteCurrentTask() {
+    if (!currentTask) return;
+    confirmDeleteTask(currentTask.id);
 }
 
 // ==================== ТЕМА ====================
@@ -693,7 +662,6 @@ function toggleTheme() {
     const isLight = document.body.classList.contains('light-theme');
     document.querySelector('.theme-toggle').textContent = isLight ? '☀️' : '🌙';
     
-    // Обновляем toggle в настройках
     const themeToggle = document.getElementById('theme-toggle-btn');
     if (themeToggle) {
         themeToggle.classList.toggle('active', !isLight);
@@ -779,14 +747,12 @@ function showLoading(show) {
 
 // ==================== ЗАКРЫТИЕ МОДАЛОК ====================
 
-// Закрытие при клике на overlay
 document.addEventListener('click', (e) => {
     if (e.target.classList.contains('modal-overlay')) {
         closeModal();
     }
 });
 
-// Закрытие при свайпе вниз (для мобильных)
 let touchStartY = 0;
 document.addEventListener('touchstart', (e) => {
     touchStartY = e.touches[0].clientY;
