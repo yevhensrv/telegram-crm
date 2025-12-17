@@ -398,6 +398,41 @@ html, body {
     gap: 4px;
 }
 
+/* ==================== МИНИ КНОПКИ ЗАДАЧИ ==================== */
+.task-actions-mini {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.mini-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    font-size: 16px;
+    cursor: pointer;
+    transition: var(--transition);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.mini-btn:active {
+    transform: scale(0.9);
+}
+
+.mini-btn.edit:hover {
+    background: var(--accent-glow);
+    border-color: var(--accent);
+}
+
+.mini-btn.delete:hover {
+    background: var(--danger-bg);
+    border-color: var(--danger);
+}
+
 /* ==================== ТАБЫ ==================== */
 .tabs {
     display: flex;
@@ -1011,6 +1046,10 @@ html, body {
     overflow-y: auto;
 }
 
+.modal-content.modal-small {
+    max-height: auto;
+}
+
 .modal.active .modal-content {
     transform: translateY(0);
 }
@@ -1102,6 +1141,27 @@ html, body {
 
 .action-btn span:first-child {
     font-size: 20px;
+}
+
+/* ==================== УДАЛЕНИЕ ==================== */
+.delete-warning {
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+}
+
+.delete-task-name {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 12px;
+    padding: 12px;
+    background: var(--bg-card);
+    border-radius: var(--radius-sm);
+}
+
+.delete-note {
+    font-size: 13px;
+    color: var(--danger);
 }
 
 /* ==================== ИНПУТЫ ==================== */
@@ -1203,6 +1263,12 @@ html, body {
     background: var(--bg-card);
     color: var(--text-primary);
     border: 1px solid var(--border);
+}
+
+.btn-danger {
+    background: var(--danger);
+    color: white;
+    box-shadow: 0 4px 16px rgba(255, 107, 107, 0.3);
 }
 
 /* ==================== ДЕТАЛИ ЗАДАЧИ ==================== */
