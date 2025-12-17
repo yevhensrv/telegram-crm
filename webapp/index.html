@@ -263,12 +263,12 @@
 
     </div>
 
-    <!-- ==================== МОДАЛКА: ДОБАВЛЕНИЕ ==================== -->
+    <!-- ==================== МОДАЛКА: ДОБАВЛЕНИЕ / РЕДАКТИРОВАНИЕ ==================== -->
     <div class="modal" id="modal-add">
         <div class="modal-overlay" onclick="closeModal()"></div>
         <div class="modal-content">
             <div class="modal-header">
-                <h3>➕ Новая задача</h3>
+                <h3 id="modal-add-title">➕ Новая задача</h3>
                 <button class="modal-close" onclick="closeModal()">✕</button>
             </div>
             <div class="modal-body">
@@ -304,7 +304,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeModal()">Отмена</button>
-                <button class="btn btn-primary" onclick="createTask()">✨ Создать</button>
+                <button class="btn btn-primary" id="modal-add-btn" onclick="saveTask()">✨ Создать</button>
             </div>
         </div>
     </div>
@@ -351,6 +351,26 @@
                     <span>🗑</span>
                     <span>Удалить</span>
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== МОДАЛКА: ПОДТВЕРЖДЕНИЕ УДАЛЕНИЯ ==================== -->
+    <div class="modal" id="modal-delete">
+        <div class="modal-overlay" onclick="closeModal()"></div>
+        <div class="modal-content modal-small">
+            <div class="modal-header">
+                <h3>🗑 Удалить задачу?</h3>
+                <button class="modal-close" onclick="closeModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <p class="delete-warning">Вы уверены, что хотите удалить задачу:</p>
+                <p class="delete-task-name" id="delete-task-title">Название задачи</p>
+                <p class="delete-note">Это действие нельзя отменить.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal()">Отмена</button>
+                <button class="btn btn-danger" onclick="confirmDelete()">🗑 Удалить</button>
             </div>
         </div>
     </div>
