@@ -1,5 +1,6 @@
+# Файл: bot/database.py
 """
-База данных CRM с автоматическим исправлением ошибок
+База данных CRM
 """
 
 import aiosqlite
@@ -10,13 +11,10 @@ import logging
 
 DATABASE_PATH = "crm_database.db"
 
+
 async def check_and_update_schema():
-    """
-    Авто-исправление: Добавляет недостающие колонки, если они пропали.
-    Это лечит ошибку "no such column: custom_role".
-    """
+    """Добавляет недостающие колонки"""
     async with aiosqlite.connect(DATABASE_PATH) as db:
-        # Список колонок, которые обязательно должны быть в таблице
         required_columns = [
             ("workspace_members", "custom_role", "TEXT"),
             ("workspace_members", "can_edit_tasks", "BOOLEAN DEFAULT TRUE"),
@@ -27,19 +25,18 @@ async def check_and_update_schema():
         
         for table, column, col_type in required_columns:
             try:
-                # Проверяем, существует ли колонка
                 await db.execute(f"SELECT {column} FROM {table} LIMIT 1")
             except Exception:
-                # Если колонки нет - добавляем её
                 try:
                     await db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
                     await db.commit()
-                    print(f"✅ Добавлена отсутствующая колонка: {column} в таблицу {table}")
+                    print(f"✅ Добавлена колонка: {column} в {table}")
                 except Exception as e:
                     print(f"❌ Не удалось добавить колонку {column}: {e}")
 
+
 async def init_database():
-    """Создаём таблицы и проверяем их структуру"""
+    """Создаём таблицы"""
     async with aiosqlite.connect(DATABASE_PATH) as db:
         
         # Пользователи
@@ -168,8 +165,7 @@ async def init_database():
             )
         """)
         
-        await db.commit()
-        # Комментарии к задачам (НОВАЯ ТАБЛИЦА)
+        # Комментарии к задачам
         await db.execute("""
             CREATE TABLE IF NOT EXISTS task_comments (
                 id INTEGER PRIMARY KEY,
@@ -181,9 +177,11 @@ async def init_database():
                 FOREIGN KEY (user_id) REFERENCES users(id)
             )
         """)
-    # СРАЗУ ПОСЛЕ создания запускаем проверку на новые колонки
+        
+        await db.commit()
+    
     await check_and_update_schema()
-    print("✅ База данных готова и проверена!")
+    print("✅ База данных готова!")
 
 
 # ==================== ПОЛЬЗОВАТЕЛИ ====================
@@ -214,7 +212,6 @@ async def get_user(telegram_id: int) -> Optional[Dict]:
 
 
 async def get_user_by_username(username: str) -> Optional[Dict]:
-    """Найти пользователя по username"""
     clean_username = username.replace('@', '').strip()
     async with aiosqlite.connect(DATABASE_PATH) as db:
         db.row_factory = aiosqlite.Row
@@ -247,21 +244,18 @@ async def create_workspace(name: str, owner_id: int, is_personal: bool = False, 
         )
         workspace_id = cursor.lastrowid
         
-        # Владелец - полные права
         await db.execute("""
             INSERT INTO workspace_members 
             (workspace_id, user_id, role, can_edit_tasks, can_delete_tasks, can_assign_tasks, can_manage_members)
             VALUES (?, ?, 'owner', TRUE, TRUE, TRUE, TRUE)
         """, (workspace_id, owner_id))
         
-        # Базовая воронка
         cursor = await db.execute(
             "INSERT INTO funnels (workspace_id, name, color) VALUES (?, 'Основная', '#3498db')",
             (workspace_id,)
         )
         funnel_id = cursor.lastrowid
         
-        # Этапы
         stages = [("📥 Новые", 0, "#e74c3c"), ("🔄 В работе", 1, "#f39c12"), ("✅ Готово", 2, "#27ae60")]
         for stage_name, position, color in stages:
             await db.execute(
@@ -317,7 +311,6 @@ async def get_workspace_members(workspace_id: int) -> List[Dict]:
 
 async def add_member_to_workspace(workspace_id: int, user_id: int, role: str = 'member', 
                                    custom_role: str = None, permissions: dict = None) -> bool:
-    """Добавить участника в пространство"""
     perms = permissions or {}
     async with aiosqlite.connect(DATABASE_PATH) as db:
         try:
@@ -341,7 +334,6 @@ async def add_member_to_workspace(workspace_id: int, user_id: int, role: str = '
 
 async def update_member_role(workspace_id: int, user_id: int, role: str = None, 
                               custom_role: str = None, permissions: dict = None) -> bool:
-    """Обновить роль участника"""
     async with aiosqlite.connect(DATABASE_PATH) as db:
         updates = []
         params = []
@@ -369,7 +361,6 @@ async def update_member_role(workspace_id: int, user_id: int, role: str = None,
 
 
 async def remove_member_from_workspace(workspace_id: int, user_id: int) -> bool:
-    """Удалить участника из пространства"""
     async with aiosqlite.connect(DATABASE_PATH) as db:
         await db.execute(
             "DELETE FROM workspace_members WHERE workspace_id = ? AND user_id = ?",
@@ -511,6 +502,7 @@ async def update_task(task_id: int, **kwargs) -> bool:
 async def delete_task(task_id: int) -> bool:
     async with aiosqlite.connect(DATABASE_PATH) as db:
         await db.execute("DELETE FROM reminders WHERE task_id = ?", (task_id,))
+        await db.execute("DELETE FROM task_comments WHERE task_id = ?", (task_id,))
         await db.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
         await db.commit()
         return True
@@ -613,10 +605,10 @@ async def delete_note(note_id: int) -> bool:
         await db.commit()
         return True
 
+
 # ==================== КОММЕНТАРИИ К ЗАДАЧАМ ====================
 
 async def add_task_comment(task_id: int, user_id: int, comment_text: str) -> int:
-    """Добавить новый комментарий к задаче."""
     async with aiosqlite.connect(DATABASE_PATH) as db:
         cursor = await db.execute(
             "INSERT INTO task_comments (task_id, user_id, comment_text) VALUES (?, ?, ?)",
@@ -625,8 +617,8 @@ async def add_task_comment(task_id: int, user_id: int, comment_text: str) -> int
         await db.commit()
         return cursor.lastrowid
 
+
 async def get_task_comments(task_id: int) -> List[Dict]:
-    """Получить все комментарии для задачи, включая информацию о пользователе."""
     async with aiosqlite.connect(DATABASE_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("""
