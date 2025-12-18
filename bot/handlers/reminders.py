@@ -1,3 +1,4 @@
+# Файл: bot/handlers/reminders.py
 """
 Напоминания
 """
@@ -39,14 +40,11 @@ async def callback_set_reminder(callback: CallbackQuery):
         await callback.answer("❌ Ошибка", show_alert=True)
         return
     
-    # Вычисляем время напоминания
     now = datetime.now()
     
     if time_option == "tomorrow":
-        # Завтра в 9:00
         remind_at = (now + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
     else:
-        # Минуты
         minutes = int(time_option)
         remind_at = now + timedelta(minutes=minutes)
     
@@ -55,7 +53,6 @@ async def callback_set_reminder(callback: CallbackQuery):
     time_str = remind_at.strftime("%d.%m.%Y %H:%M")
     await callback.answer(f"✅ Напомню {time_str}", show_alert=True)
     
-    # Возвращаемся к задаче
     priority_names = {"high": "🔴 Высокий", "medium": "🟡 Средний", "low": "🟢 Низкий"}
     status_names = {"todo": "⬜ Не начата", "in_progress": "🔄 В работе", "done": "✅ Выполнена"}
     
