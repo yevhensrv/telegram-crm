@@ -6,6 +6,7 @@ let userData = null;
 let currentWorkspaceId = null;
 let currentTask = null;
 let allTasks = [];
+let allMembers = [];
 let selectedPriority = 'medium';
 let currentDate = new Date();
 let selectedDate = null;
@@ -45,13 +46,8 @@ async function init() {
 
 async function loadUserData() {
     try {
-        showLoading(true);
         const response = await fetch(`/api/user/${userId}`);
-        
-        if (!response.ok) {
-            console.error('User not found');
-            return;
-        }
+        if (!response.ok) return;
         
         const data = await response.json();
         userData = data;
@@ -78,9 +74,6 @@ async function loadUserData() {
         
     } catch (error) {
         console.error('Error loading user:', error);
-        showToast('❌ Ошибка загрузки', 'error');
-    } finally {
-        showLoading(false);
     }
 }
 
@@ -91,19 +84,21 @@ async function loadWorkspace(workspaceId) {
         
         const data = await response.json();
         allTasks = data.tasks || [];
+        allMembers = data.members || [];
         
         renderBoard(data.funnels);
         renderTaskList(allTasks);
         renderTodayTasks();
         renderUrgentTasks();
         renderCalendar();
+        renderMembers();
         
     } catch (error) {
         console.error('Error loading workspace:', error);
     }
 }
 
-// ==================== ОБНОВЛЕНИЕ СТАТИСТИКИ ====================
+// ==================== СТАТИСТИКА ====================
 
 function updateStats(stats) {
     const done = stats.done || 0;
@@ -122,7 +117,7 @@ function updateCurrentDate() {
     document.getElementById('current-date').textContent = dateStr;
 }
 
-// ==================== РЕНДЕРИНГ ====================
+// ==================== РЕНДЕРИНГ ЗАДАЧ ====================
 
 function renderBoard(funnels) {
     const board = document.getElementById('board');
@@ -143,7 +138,7 @@ function renderBoard(funnels) {
                 <span class="column-title">${stage.name}</span>
                 <span class="column-count">${stage.tasks.length}</span>
             </div>
-            <div class="column-tasks" data-stage-id="${stage.id}">
+            <div class="column-tasks">
                 ${stage.tasks.map(task => renderTaskCard(task)).join('')}
             </div>
         `;
@@ -153,10 +148,16 @@ function renderBoard(funnels) {
 
 function renderTaskCard(task) {
     const isDone = task.status === 'done';
+    const assignee = task.assigned_username ? `@${task.assigned_username}` : '';
+    const dueDate = task.due_date ? formatDueDate(task.due_date) : '';
+    
     return `
-        <div class="task-card ${isDone ? 'done' : ''} priority-${task.priority}" 
-             data-task-id="${task.id}" onclick="showTask(${task.id})">
+        <div class="task-card ${isDone ? 'done' : ''} priority-${task.priority}" onclick="showTask(${task.id})">
             <div class="task-card-title">${escapeHtml(task.title)}</div>
+            <div class="task-card-meta">
+                ${dueDate ? `<span class="task-due">📅 ${dueDate}</span>` : ''}
+                ${assignee ? `<span class="task-assignee">👤 ${assignee}</span>` : ''}
+            </div>
             <div class="task-card-footer">
                 <span class="task-card-date">${formatDate(task.created_at)}</span>
                 <div class="task-card-check" onclick="event.stopPropagation(); toggleTask(${task.id})"></div>
@@ -185,14 +186,17 @@ function renderTaskList(tasks) {
 
 function renderTaskItem(task) {
     const isDone = task.status === 'done';
+    const assignee = task.assigned_username ? `@${task.assigned_username}` : '';
+    const dueDate = task.due_date ? formatDueDate(task.due_date) : '';
+    
     return `
-        <div class="task-item ${isDone ? 'done' : ''} priority-${task.priority}" 
-             onclick="showTask(${task.id})">
+        <div class="task-item ${isDone ? 'done' : ''} priority-${task.priority}" onclick="showTask(${task.id})">
             <div class="task-checkbox" onclick="event.stopPropagation(); toggleTask(${task.id})"></div>
             <div class="task-content">
                 <div class="task-title">${escapeHtml(task.title)}</div>
                 <div class="task-meta">
-                    <span class="task-meta-item">📅 ${formatDate(task.created_at)}</span>
+                    ${dueDate ? `<span class="task-meta-item">📅 ${dueDate}</span>` : ''}
+                    ${assignee ? `<span class="task-meta-item">👤 ${assignee}</span>` : ''}
                 </div>
             </div>
             <div class="task-actions-mini">
@@ -205,11 +209,11 @@ function renderTaskItem(task) {
 
 function renderTodayTasks() {
     const container = document.getElementById('today-tasks');
-    const today = new Date().toDateString();
+    const today = new Date().toISOString().split('T')[0];
     
     const todayTasks = allTasks.filter(t => {
-        const taskDate = new Date(t.created_at).toDateString();
-        return taskDate === today && t.status !== 'done';
+        return (t.due_date === today || new Date(t.created_at).toDateString() === new Date().toDateString()) 
+               && t.status !== 'done';
     });
     
     document.getElementById('today-count').textContent = todayTasks.length;
@@ -224,7 +228,6 @@ function renderTodayTasks() {
 
 function renderUrgentTasks() {
     const container = document.getElementById('urgent-tasks');
-    
     const urgentTasks = allTasks.filter(t => t.priority === 'high' && t.status !== 'done');
     
     document.getElementById('urgent-count').textContent = urgentTasks.length;
@@ -242,16 +245,63 @@ function renderWorkspaces(workspaces) {
     
     container.innerHTML = workspaces.map(ws => {
         const icon = ws.is_personal ? '🏠' : '👥';
+        const role = ws.custom_role || ws.role;
         return `
             <div class="workspace-item" onclick="switchWorkspace(${ws.id})">
                 <span class="workspace-icon">${icon}</span>
                 <div class="workspace-info">
                     <div class="workspace-name">${escapeHtml(ws.name)}</div>
-                    <div class="workspace-count">${ws.role === 'owner' ? 'Владелец' : 'Участник'}</div>
+                    <div class="workspace-count">${role === 'owner' ? 'Владелец' : role}</div>
                 </div>
             </div>
         `;
     }).join('');
+}
+
+// ==================== РЕНДЕРИНГ УЧАСТНИКОВ ====================
+
+function renderMembers() {
+    const container = document.getElementById('members-list');
+    if (!container) return;
+    
+    if (!allMembers || allMembers.length === 0) {
+        container.innerHTML = '<div class="empty-state"><span class="empty-icon">👥</span><span>Нет участников</span></div>';
+        return;
+    }
+    
+    container.innerHTML = allMembers.map(member => {
+        const roleText = member.custom_role || getRoleName(member.role);
+        const isOwner = member.role === 'owner';
+        
+        return `
+            <div class="member-item">
+                <div class="member-avatar">👤</div>
+                <div class="member-info">
+                    <div class="member-name">${escapeHtml(member.full_name || 'Пользователь')}</div>
+                    <div class="member-username">@${member.username || 'unknown'}</div>
+                    <div class="member-role">${roleText}</div>
+                </div>
+                ${!isOwner ? `
+                    <div class="member-actions">
+                        <button class="mini-btn" onclick="editMember(${member.id})">⚙️</button>
+                        <button class="mini-btn delete" onclick="confirmRemoveMember(${member.id})">✕</button>
+                    </div>
+                ` : '<span class="owner-badge">👑</span>'}
+            </div>
+        `;
+    }).join('');
+}
+
+function getRoleName(role) {
+    const roles = {
+        'owner': 'Владелец',
+        'pm': 'PM',
+        'lead': 'НП',
+        'team_lead': 'СК',
+        'admin': 'Админ',
+        'member': 'Участник'
+    };
+    return roles[role] || role;
 }
 
 // ==================== КАЛЕНДАРЬ ====================
@@ -278,8 +328,7 @@ function renderCalendar() {
     let html = '';
     
     for (let i = startDay - 1; i >= 0; i--) {
-        const day = prevMonthLastDay - i;
-        html += `<div class="calendar-day other-month">${day}</div>`;
+        html += `<div class="calendar-day other-month">${prevMonthLastDay - i}</div>`;
     }
     
     const today = new Date();
@@ -288,10 +337,7 @@ function renderCalendar() {
         const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const isToday = today.getDate() === day && today.getMonth() === month && today.getFullYear() === year;
         
-        const hasTasks = allTasks.some(t => {
-            const taskDate = new Date(t.created_at);
-            return taskDate.getDate() === day && taskDate.getMonth() === month && taskDate.getFullYear() === year;
-        });
+        const hasTasks = allTasks.some(t => t.due_date === dateStr);
         
         const classes = ['calendar-day'];
         if (isToday) classes.push('today');
@@ -314,31 +360,23 @@ function renderCalendar() {
 function prevMonth() {
     currentDate.setMonth(currentDate.getMonth() - 1);
     renderCalendar();
-    haptic('light');
 }
 
 function nextMonth() {
     currentDate.setMonth(currentDate.getMonth() + 1);
     renderCalendar();
-    haptic('light');
 }
 
 function selectDate(dateStr, day) {
     selectedDate = dateStr;
     renderCalendar();
     
-    const year = currentDate.getFullYear();
-    const month = currentDate.getMonth();
-    
-    const dayTasks = allTasks.filter(t => {
-        const taskDate = new Date(t.created_at);
-        return taskDate.getDate() === day && taskDate.getMonth() === month && taskDate.getFullYear() === year;
-    });
+    const dayTasks = allTasks.filter(t => t.due_date === dateStr);
     
     const monthNames = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 
                         'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
     
-    document.getElementById('selected-date-title').textContent = `📅 ${day} ${monthNames[month]}`;
+    document.getElementById('selected-date-title').textContent = `📅 ${day} ${monthNames[currentDate.getMonth()]}`;
     
     const container = document.getElementById('calendar-task-list');
     
@@ -347,8 +385,6 @@ function selectDate(dateStr, day) {
     } else {
         container.innerHTML = dayTasks.map(task => renderTaskItem(task)).join('');
     }
-    
-    haptic('light');
 }
 
 // ==================== ДОСТИЖЕНИЯ ====================
@@ -358,11 +394,9 @@ function updateAchievements(doneCount) {
     const thresholds = [1, 5, 10, 50, 100, 7];
     
     achievements.forEach((ach, index) => {
-        if (index < 5) {
-            if (doneCount >= thresholds[index]) {
-                ach.classList.remove('locked');
-                ach.classList.add('unlocked');
-            }
+        if (index < 5 && doneCount >= thresholds[index]) {
+            ach.classList.remove('locked');
+            ach.classList.add('unlocked');
         }
     });
 }
@@ -377,18 +411,10 @@ function switchPage(pageName) {
         btn.classList.toggle('active', btn.dataset.page === pageName);
     });
     
-    const titles = {
-        home: 'Моя CRM',
-        tasks: 'Задачи',
-        calendar: 'Календарь',
-        profile: 'Профиль'
-    };
+    const titles = { home: 'Моя CRM', tasks: 'Задачи', calendar: 'Календарь', profile: 'Профиль' };
     document.getElementById('page-title').textContent = titles[pageName] || 'CRM';
     
-    const fab = document.querySelector('.fab');
-    fab.style.display = pageName === 'profile' ? 'none' : 'flex';
-    
-    haptic('light');
+    document.querySelector('.fab').style.display = pageName === 'profile' ? 'none' : 'flex';
 }
 
 async function switchWorkspace(workspaceId) {
@@ -404,26 +430,19 @@ function setupEventListeners() {
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', () => {
             const view = tab.dataset.view;
-            
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             tab.classList.add('active');
-            
             document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
             document.getElementById(`view-${view}`).classList.add('active');
-            
-            haptic('light');
         });
     });
     
     document.querySelectorAll('.filter-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             currentFilter = btn.dataset.filter;
-            
             document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
-            
             renderTaskList(allTasks);
-            haptic('light');
         });
     });
     
@@ -432,7 +451,6 @@ function setupEventListeners() {
             document.querySelectorAll('.priority-btn').forEach(b => b.classList.remove('selected'));
             btn.classList.add('selected');
             selectedPriority = btn.dataset.priority;
-            haptic('light');
         });
     });
 }
@@ -445,7 +463,9 @@ function showAddTask() {
     
     document.getElementById('task-title').value = '';
     document.getElementById('task-desc').value = '';
-    document.getElementById('task-due').value = '';
+    document.getElementById('task-due-date').value = '';
+    document.getElementById('task-due-time').value = '';
+    document.getElementById('task-assignee').value = '';
     
     document.getElementById('modal-add-title').textContent = '➕ Новая задача';
     document.getElementById('modal-add-btn').textContent = '✨ Создать';
@@ -465,9 +485,11 @@ function editTask(taskId) {
     isEditing = true;
     currentTask = task;
     
-    document.getElementById('task-title').value = task.title;
+    document.getElementById('task-title').value = task.title || '';
     document.getElementById('task-desc').value = task.description || '';
-    document.getElementById('task-due').value = task.due_date ? task.due_date.split('T')[0] : '';
+    document.getElementById('task-due-date').value = task.due_date || '';
+    document.getElementById('task-due-time').value = task.due_time || '';
+    document.getElementById('task-assignee').value = task.assigned_username ? `@${task.assigned_username}` : '';
     
     document.getElementById('modal-add-title').textContent = '✏️ Редактировать';
     document.getElementById('modal-add-btn').textContent = '💾 Сохранить';
@@ -478,7 +500,6 @@ function editTask(taskId) {
     });
     
     openModal('modal-add');
-    haptic('light');
 }
 
 function showTask(taskId) {
@@ -490,8 +511,7 @@ function showTask(taskId) {
     document.getElementById('view-task-title').textContent = task.title;
     document.getElementById('view-task-desc').textContent = task.description || 'Без описания';
     
-    const modalPriority = document.getElementById('modal-priority');
-    modalPriority.className = 'modal-task-priority ' + task.priority;
+    document.getElementById('modal-priority').className = 'modal-task-priority ' + task.priority;
     
     const priorityTexts = { high: '🔴 Высокий', medium: '🟡 Средний', low: '🟢 Низкий' };
     document.getElementById('view-task-priority-text').textContent = priorityTexts[task.priority] || 'Средний';
@@ -502,6 +522,18 @@ function showTask(taskId) {
     
     document.getElementById('view-task-date').textContent = formatDateFull(task.created_at);
     
+    // Дедлайн
+    const dueEl = document.getElementById('view-task-due');
+    if (dueEl) {
+        dueEl.textContent = task.due_date ? `${formatDueDate(task.due_date)} ${task.due_time || ''}` : 'Не указан';
+    }
+    
+    // Исполнитель
+    const assigneeEl = document.getElementById('view-task-assignee');
+    if (assigneeEl) {
+        assigneeEl.textContent = task.assigned_username ? `@${task.assigned_username}` : 'Не назначен';
+    }
+    
     document.getElementById('toggle-btn-text').textContent = task.status === 'done' ? 'Открыть' : 'Выполнено';
     
     openModal('modal-task');
@@ -509,7 +541,6 @@ function showTask(taskId) {
 
 function openModal(modalId) {
     document.getElementById(modalId).classList.add('active');
-    haptic('light');
 }
 
 function closeModal() {
@@ -523,11 +554,12 @@ function closeModal() {
 async function saveTask() {
     const title = document.getElementById('task-title').value.trim();
     const description = document.getElementById('task-desc').value.trim();
-    const dueDate = document.getElementById('task-due').value;
+    const dueDate = document.getElementById('task-due-date').value;
+    const dueTime = document.getElementById('task-due-time').value;
+    const assignee = document.getElementById('task-assignee').value.trim();
     
     if (!title) {
         showToast('⚠️ Введите название', 'warning');
-        document.getElementById('task-title').focus();
         return;
     }
     
@@ -535,45 +567,40 @@ async function saveTask() {
         let response;
         
         if (isEditing && currentTask) {
-            // Редактирование
             response = await fetch(`/api/task/${currentTask.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     title,
                     description: description || null,
-                    priority: selectedPriority
+                    priority: selectedPriority,
+                    due_date: dueDate || null,
+                    due_time: dueTime || null,
+                    assigned_username: assignee || null
                 })
             });
-            
-            if (response.ok) {
-                closeModal();
-                await loadUserData();
-                showToast('✅ Задача обновлена!');
-                haptic('success');
-            }
         } else {
-            // Создание
             response = await fetch(`/api/tasks/${currentWorkspaceId}/${userId}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     title,
                     description: description || null,
-                    priority: selectedPriority
+                    priority: selectedPriority,
+                    due_date: dueDate || null,
+                    due_time: dueTime || null,
+                    assigned_username: assignee || null
                 })
             });
-            
-            if (response.ok) {
-                closeModal();
-                await loadUserData();
-                showToast('✅ Задача создана!');
-                haptic('success');
-            }
         }
         
-        if (!response.ok) {
-            showToast('❌ Ошибка сохранения', 'error');
+        if (response.ok) {
+            closeModal();
+            await loadUserData();
+            showToast(isEditing ? '✅ Задача обновлена!' : '✅ Задача создана!');
+        } else {
+            const error = await response.json();
+            showToast(`❌ ${error.detail || 'Ошибка'}`, 'error');
         }
     } catch (error) {
         console.error('Error:', error);
@@ -581,26 +608,14 @@ async function saveTask() {
     }
 }
 
-// Для совместимости со старым кодом
-async function createTask() {
-    await saveTask();
-}
-
 async function toggleTask(taskId) {
     try {
         const response = await fetch(`/api/task/${taskId}/toggle`, { method: 'POST' });
-        
         if (response.ok) {
-            const data = await response.json();
-            const isDone = data.task.status === 'done';
-            
             await loadUserData();
-            
-            showToast(isDone ? '✅ Выполнено!' : '🔄 Открыто');
-            haptic(isDone ? 'success' : 'light');
+            showToast('✅ Статус изменён');
         }
     } catch (error) {
-        console.error('Error:', error);
         showToast('❌ Ошибка', 'error');
     }
 }
@@ -623,30 +638,22 @@ function confirmDeleteTask(taskId) {
     if (!task) return;
     
     currentTask = task;
-    
     document.getElementById('delete-task-title').textContent = task.title;
     openModal('modal-delete');
 }
 
-async function deleteTask(taskId) {
+async function confirmDelete() {
+    if (!currentTask) return;
+    
     try {
-        const response = await fetch(`/api/task/${taskId}`, { method: 'DELETE' });
-        
+        const response = await fetch(`/api/task/${currentTask.id}`, { method: 'DELETE' });
         if (response.ok) {
             closeModal();
             await loadUserData();
             showToast('🗑 Задача удалена');
-            haptic('warning');
         }
     } catch (error) {
-        console.error('Error:', error);
         showToast('❌ Ошибка', 'error');
-    }
-}
-
-async function confirmDelete() {
-    if (currentTask) {
-        await deleteTask(currentTask.id);
     }
 }
 
@@ -655,19 +662,91 @@ async function deleteCurrentTask() {
     confirmDeleteTask(currentTask.id);
 }
 
+// ==================== УЧАСТНИКИ ====================
+
+function showAddMember() {
+    document.getElementById('member-username').value = '';
+    document.getElementById('member-role').value = 'member';
+    document.getElementById('member-custom-role').value = '';
+    openModal('modal-add-member');
+}
+
+async function saveMember() {
+    const username = document.getElementById('member-username').value.trim().replace('@', '');
+    const role = document.getElementById('member-role').value;
+    const customRole = document.getElementById('member-custom-role').value.trim();
+    
+    if (!username) {
+        showToast('⚠️ Введите @username', 'warning');
+        return;
+    }
+    
+    // Получаем права из выбранной роли
+    let permissions = {
+        can_edit_tasks: true,
+        can_delete_tasks: false,
+        can_assign_tasks: false,
+        can_manage_members: false
+    };
+    
+    if (role === 'pm' || role === 'lead' || role === 'team_lead') {
+        permissions = { can_edit_tasks: true, can_delete_tasks: true, can_assign_tasks: true, can_manage_members: true };
+    } else if (role === 'admin') {
+        permissions = { can_edit_tasks: true, can_delete_tasks: false, can_assign_tasks: true, can_manage_members: true };
+    }
+    
+    try {
+        const response = await fetch(`/api/workspace/${currentWorkspaceId}/members`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                username,
+                role,
+                custom_role: customRole || null,
+                ...permissions
+            })
+        });
+        
+        if (response.ok) {
+            closeModal();
+            await loadWorkspace(currentWorkspaceId);
+            showToast('✅ Участник добавлен!');
+        } else {
+            const error = await response.json();
+            showToast(`❌ ${error.detail}`, 'error');
+        }
+    } catch (error) {
+        showToast('❌ Ошибка сети', 'error');
+    }
+}
+
+function confirmRemoveMember(userId) {
+    if (confirm('Удалить участника из команды?')) {
+        removeMember(userId);
+    }
+}
+
+async function removeMember(memberId) {
+    try {
+        const response = await fetch(`/api/workspace/${currentWorkspaceId}/members/${memberId}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            await loadWorkspace(currentWorkspaceId);
+            showToast('✅ Участник удалён');
+        }
+    } catch (error) {
+        showToast('❌ Ошибка', 'error');
+    }
+}
+
 // ==================== ТЕМА ====================
 
 function toggleTheme() {
     document.body.classList.toggle('light-theme');
     const isLight = document.body.classList.contains('light-theme');
     document.querySelector('.theme-toggle').textContent = isLight ? '☀️' : '🌙';
-    
-    const themeToggle = document.getElementById('theme-toggle-btn');
-    if (themeToggle) {
-        themeToggle.classList.toggle('active', !isLight);
-    }
-    
-    haptic('light');
 }
 
 // ==================== УТИЛИТЫ ====================
@@ -681,7 +760,6 @@ function escapeHtml(text) {
 
 function formatDate(dateString) {
     if (!dateString) return '';
-    
     const date = new Date(dateString);
     const now = new Date();
     const diff = now - date;
@@ -698,74 +776,36 @@ function formatDateFull(dateString) {
     if (!dateString) return '';
     const date = new Date(dateString);
     return date.toLocaleDateString('ru-RU', { 
-        day: 'numeric', 
-        month: 'long', 
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
+        day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
     });
 }
 
-function haptic(type) {
-    if (tg?.HapticFeedback) {
-        if (type === 'success') {
-            tg.HapticFeedback.notificationOccurred('success');
-        } else if (type === 'warning') {
-            tg.HapticFeedback.notificationOccurred('warning');
-        } else if (type === 'error') {
-            tg.HapticFeedback.notificationOccurred('error');
-        } else {
-            tg.HapticFeedback.impactOccurred('light');
-        }
-    }
+function formatDueDate(dateString) {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    const today = new Date();
+    
+    if (date.toDateString() === today.toDateString()) return 'Сегодня';
+    
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    if (date.toDateString() === tomorrow.toDateString()) return 'Завтра';
+    
+    return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
 }
 
 function showToast(message, type = 'success') {
     const toast = document.getElementById('toast');
-    const icon = toast.querySelector('.toast-icon');
-    const text = toast.querySelector('.toast-text');
+    const icons = { success: '✅', error: '❌', warning: '⚠️' };
     
-    const icons = {
-        success: '✅',
-        error: '❌',
-        warning: '⚠️'
-    };
-    
-    icon.textContent = icons[type] || '✅';
-    text.textContent = message;
-    
+    toast.querySelector('.toast-icon').textContent = icons[type] || '✅';
+    toast.querySelector('.toast-text').textContent = message;
     toast.classList.add('show');
     
-    setTimeout(() => {
-        toast.classList.remove('show');
-    }, 2500);
+    setTimeout(() => toast.classList.remove('show'), 2500);
 }
 
-function showLoading(show) {
-    // Можно добавить индикатор загрузки
-}
-
-// ==================== ЗАКРЫТИЕ МОДАЛОК ====================
-
+// Закрытие модалок
 document.addEventListener('click', (e) => {
-    if (e.target.classList.contains('modal-overlay')) {
-        closeModal();
-    }
-});
-
-let touchStartY = 0;
-document.addEventListener('touchstart', (e) => {
-    touchStartY = e.touches[0].clientY;
-});
-
-document.addEventListener('touchend', (e) => {
-    const touchEndY = e.changedTouches[0].clientY;
-    const diff = touchEndY - touchStartY;
-    
-    if (diff > 100) {
-        const activeModal = document.querySelector('.modal.active');
-        if (activeModal) {
-            closeModal();
-        }
-    }
+    if (e.target.classList.contains('modal-overlay')) closeModal();
 });
