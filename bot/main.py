@@ -1,108 +1,93 @@
-"""
-Запуск бота и API вместе
-"""
-
 import asyncio
 import logging
 import os
-
+from fastapi import FastAPI, Request, status
+from fastapi.staticfiles import StaticFiles
 from aiogram import Bot, Dispatcher
-from aiogram.enums import ParseMode
-from aiogram.client.default import DefaultBotProperties
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-import uvicorn
-from starlette.requests import Request # Добавляем импорт для FastAPI
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import Update
+from aiogram.exceptions import TelegramBadRequest
 
-from bot.config import BOT_TOKEN
-from bot import database as db
-from bot.api import app as api_app # FastAPI приложение
-from bot.handlers.routers import main_router # Импортируем роутеры
+# Импорт конфигурации и обработчиков
+from bot.config import TOKEN, WEBAPP_URL, APP_BASE_URL 
+# Внимание: APP_BASE_URL - это основной URL вашего сервиса на Render! 
+# Убедитесь, что он есть в bot/config.py!
 
-# Устанавливаем базовое логирование
+from bot.database import init_database
+from bot.handlers import start, workspaces, tasks, reminders
+from bot import api
+
+# Настройка логов
 logging.basicConfig(level=logging.INFO)
 
-# =======================
-# ФУНКЦИИ БОТА / ПЛАНИРОВЩИК
-# =======================
+# Инициализация бота и диспетчера
+# Используем Webhook-режим для Render
+bot = Bot(token=TOKEN)
+dp = Dispatcher(storage=MemoryStorage())
 
-async def check_reminders_job(bot: Bot):
-    """Задача планировщика для проверки напоминаний."""
-    # Обработка напоминаний
-    # Этот код уже работает, судя по логам
-    pending_reminders = await db.get_pending_reminders()
-    for reminder in pending_reminders:
-        text = f"🔔 **Напоминание о задаче:** {reminder['task_title']}"
-        await bot.send_message(
-            chat_id=reminder['telegram_id'],
-            text=text,
-            parse_mode=ParseMode.MARKDOWN
-        )
-        await db.mark_reminder_sent(reminder['id'])
+# Инициализация FastAPI
+app = FastAPI()
 
+# ----------------- FastAPI HANDLERS -----------------
 
-async def start_bot():
-    """Главная функция запуска бота и вебхука."""
-    
-    # 1. Инициализация базы данных
-    await db.init_database() 
+@app.get("/health")
+async def health_check():
+    """Проверка здоровья сервиса"""
+    return {"status": "ok", "bot_running": True}
 
-    # 2. Инициализация бота и диспетчера
-    bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-    dp = Dispatcher()
-
-    # 3. Регистрация всех роутеров
-    dp.include_router(main_router)
-    
-    # 4. Настройка планировщика (для напоминаний)
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(check_reminders_job, 'interval', seconds=30, args=[bot])
-    scheduler.start()
-    
-    # 5. Настройка Webhook
-    
-    # URL твоего Render-сервиса
-    WEBHOOK_URL = os.environ.get("WEBHOOK_URL") 
-    
-    if not WEBHOOK_URL:
-        # Если переменная окружения WEBHOOK_URL не установлена, 
-        # возможно, Render не знает, куда отправлять запросы.
-        logging.error("WEBHOOK_URL environment variable is not set!")
-        # В этом случае, если ты уверен, что запускаешься через Uvicorn, продолжаем, 
-        # но убедись, что ты правильно настроил Webhook в настройках Render.
-        
-    
-    # Регистрация Webhook для FastAPI
-    # Создаем конечную точку для приема обновлений Telegram
-    @api_app.post(f"/webhook/{BOT_TOKEN}")
-    async def telegram_webhook(request: Request):
-        json_data = await request.json()
-        await dp.feed_raw_update(bot, json_data)
-        return {"ok": True}
-        
-    # Установка вебхука при старте
-    async def set_webhook():
-        await bot.delete_webhook() # Удаляем старый, если есть
-        await bot.set_webhook(url=f"{WEBHOOK_URL}/webhook/{BOT_TOKEN}")
-        logging.info(f"✅ Webhook set to: {WEBHOOK_URL}/webhook/{BOT_TOKEN}")
-
-    dp.startup.register(set_webhook)
-
-    # 6. Запуск Uvicorn (запускает FastAPI и Dispatcher)
-    
-    config = uvicorn.Config(
-        api_app, 
-        host="0.0.0.0", 
-        port=int(os.environ.get("PORT", 8080)),
-        log_level="info"
-    )
-    server = uvicorn.Server(config)
-    
-    # Запускаем сервер
-    await server.serve()
-
-
-if __name__ == '__main__':
+@app.post(f"/{TOKEN}") 
+# Это наш URL-адрес вебхука. Например: https://telegram-crm-or80.onrender.com/8270912970:AAH...
+async def telegram_webhook(request: Request):
+    """Принимаем обновления от Telegram и передаем их диспетчеру aiogram"""
     try:
-        asyncio.run(start_bot())
+        json_data = await request.json()
+        update = Update(**json_data)
+        await dp.feed_update(bot, update)
+        return {"ok": True}
+    except TelegramBadRequest as e:
+        # Это может случиться, если бот пытается отправить слишком длинное сообщение или похожая ошибка
+        logging.error(f"TelegramBadRequest in webhook: {e}")
+        return {"ok": False, "error": str(e)}, status.HTTP_400_BAD_REQUEST
     except Exception as e:
-        logging.critical(f"Global error during startup: {e}")
+        logging.error(f"Unhandled error in webhook: {e}")
+        return {"ok": False, "error": str(e)}, status.HTTP_500_INTERNAL_SERVER_ERROR
+
+# Подключаем API маршруты
+app.include_router(api.router, prefix="/api")
+
+# Монтируем статические файлы WebApp
+current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+webapp_path = os.path.join(current_dir, "webapp")
+
+if os.path.exists(webapp_path):
+    app.mount("/", StaticFiles(directory=webapp_path, html=True), name="webapp")
+
+# Регистрация роутеров бота
+dp.include_router(start.router)
+dp.include_router(workspaces.router)
+dp.include_router(tasks.router)
+dp.include_router(reminders.router)
+
+# ----------------- STARTUP LOGIC -----------------
+
+async def on_startup_logic(bot: Bot):
+    await init_database()
+    
+    # 1. Устанавливаем вебхук на Render
+    webhook_url = f"{APP_BASE_URL}{TOKEN}"
+    await bot.set_webhook(webhook_url)
+    
+    logging.info(f"✅ Webhook установлен на: {webhook_url}")
+    print("🚀 Бот запущен и готов принимать вебхуки!")
+
+@app.on_event("startup")
+async def on_startup_event():
+    # Запускаем логику при старте FastAPI
+    await on_startup_logic(bot)
+
+if __name__ == "__main__":
+    import uvicorn
+    # В локальном режиме (если запустите не на Render) используем polling
+    asyncio.run(dp.start_polling(bot))
+    # Для продакшена на Render uvicorn запускается из Procfile
+    # uvicorn.run(app, host="0.0.0.0", port=10000)
