@@ -1,3 +1,4 @@
+# Файл: bot/handlers/start.py
 """
 Команда /start и главное меню
 """
@@ -18,30 +19,30 @@ router = Router()
 async def cmd_start(message: Message, state: FSMContext):
     """Обработка команды /start"""
     await state.clear()
-    
+
     telegram_id = message.from_user.id
     username = message.from_user.username
     full_name = message.from_user.full_name
-    
+
     # Создаём пользователя
     user_id = await db.create_user(telegram_id, username, full_name)
-    
+
     # Проверяем личное пространство
     workspaces = await db.get_user_workspaces(user_id)
     has_personal = any(ws.get("is_personal") for ws in workspaces)
-    
+
     if not has_personal:
         await db.create_personal_workspace(user_id)
-    
+
     welcome_text = f"""
-👋 **Привет, {full_name}!**
+👋 Привет, {full_name}!
 
 Добро пожаловать в твою CRM-систему!
 
-🏠 **Личное пространство** — твои личные задачи
-👥 **Командные пространства** — работа с коллегами
+🏠 Личное пространство — твои личные задачи
+👥 Командные пространства — работа с коллегами
 
-**Что можно делать:**
+Что можно делать:
 • 📋 Создавать задачи
 • 📊 Организовывать по воронкам
 • 🔔 Ставить напоминания
@@ -49,7 +50,7 @@ async def cmd_start(message: Message, state: FSMContext):
 
 Выбери действие ниже 👇
 """
-    
+
     await message.answer(
         welcome_text,
         parse_mode="Markdown",
@@ -64,14 +65,14 @@ async def settings(message: Message):
     if not user:
         await message.answer("❌ Отправьте /start")
         return
-    
+
     text = f"""
 ⚙️ **Настройки**
 
-👤 **Ваш профиль:**
+👤 Ваш профиль:
 • Имя: {user['full_name']}
 • Username: @{user['username'] or 'не указан'}
-• ID: `{user['telegram_id']}`
+• ID: {user['telegram_id']}
 
 🔔 Напоминания: Включены
 """
@@ -97,7 +98,7 @@ async def cmd_help(message: Message):
 
 **Приоритеты:**
 🔴 Высокий
-🟡 Средний  
+🟡 Средний
 🟢 Низкий
 
 **Приглашение в команду:**
@@ -113,15 +114,15 @@ async def show_reminders(message: Message):
     if not user:
         await message.answer("❌ Отправьте /start")
         return
-    
+
     reminders = await db.get_user_reminders(user["id"])
-    
+
     if not reminders:
         await message.answer("🔔 **Напоминания**\n\n_У вас нет активных напоминаний_", parse_mode="Markdown")
         return
-    
+
     text = "🔔 **Ваши напоминания:**\n\n"
     for r in reminders[:10]:
         text += f"• {r['task_title']}\n  ⏰ {r['remind_at']}\n\n"
-    
+
     await message.answer(text, parse_mode="Markdown")
