@@ -1,17 +1,45 @@
 """
-База данных CRM
+База данных CRM с автоматическим исправлением ошибок
 """
 
 import aiosqlite
 from datetime import datetime
 from typing import Optional, List, Dict
 import secrets
+import logging
 
 DATABASE_PATH = "crm_database.db"
 
+async def check_and_update_schema():
+    """
+    Авто-исправление: Добавляет недостающие колонки, если они пропали.
+    Это лечит ошибку "no such column: custom_role".
+    """
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        # Список колонок, которые обязательно должны быть в таблице
+        required_columns = [
+            ("workspace_members", "custom_role", "TEXT"),
+            ("workspace_members", "can_edit_tasks", "BOOLEAN DEFAULT TRUE"),
+            ("workspace_members", "can_delete_tasks", "BOOLEAN DEFAULT FALSE"),
+            ("workspace_members", "can_assign_tasks", "BOOLEAN DEFAULT FALSE"),
+            ("workspace_members", "can_manage_members", "BOOLEAN DEFAULT FALSE"),
+        ]
+        
+        for table, column, col_type in required_columns:
+            try:
+                # Проверяем, существует ли колонка
+                await db.execute(f"SELECT {column} FROM {table} LIMIT 1")
+            except Exception:
+                # Если колонки нет - добавляем её
+                try:
+                    await db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+                    await db.commit()
+                    print(f"✅ Добавлена отсутствующая колонка: {column} в таблицу {table}")
+                except Exception as e:
+                    print(f"❌ Не удалось добавить колонку {column}: {e}")
 
 async def init_database():
-    """Создаём таблицы"""
+    """Создаём таблицы и проверяем их структуру"""
     async with aiosqlite.connect(DATABASE_PATH) as db:
         
         # Пользователи
@@ -39,7 +67,7 @@ async def init_database():
             )
         """)
         
-        # Участники пространств с ролями
+        # Участники пространств
         await db.execute("""
             CREATE TABLE IF NOT EXISTS workspace_members (
                 id INTEGER PRIMARY KEY,
@@ -141,7 +169,10 @@ async def init_database():
         """)
         
         await db.commit()
-        print("✅ База данных готова!")
+
+    # СРАЗУ ПОСЛЕ создания запускаем проверку на новые колонки
+    await check_and_update_schema()
+    print("✅ База данных готова и проверена!")
 
 
 # ==================== ПОЛЬЗОВАТЕЛИ ====================
