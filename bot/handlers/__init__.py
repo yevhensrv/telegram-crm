@@ -2,7 +2,7 @@
 Инициализация обработчиков
 """
 
-from bot.handlers import start, tasks, workspaces, reminders
+from bot.handlers import start, tasks, workspaces, reminders, comments
 
 # Список всех роутеров
 routers = [
@@ -10,4 +10,5 @@ routers = [
     workspaces.router,
     tasks.router,
     reminders.router,
+    comments.router,  # ← ДОБАВЛЕНО
 ]
