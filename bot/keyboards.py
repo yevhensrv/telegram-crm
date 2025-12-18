@@ -92,15 +92,23 @@ def get_task_menu(task_id: int, workspace_id: int) -> InlineKeyboardMarkup:
     """Меню задачи"""
     builder = InlineKeyboardBuilder()
     
+    # Первая строка: Изменение и статус
     builder.add(InlineKeyboardButton(text="✏️ Изменить", callback_data=f"edit:{task_id}"))
     builder.add(InlineKeyboardButton(text="🔄 Этап", callback_data=f"stage:{task_id}"))
+    
+    # Вторая строка: Приоритет и Напоминание
     builder.add(InlineKeyboardButton(text="⚡ Приоритет", callback_data=f"priority:{task_id}"))
     builder.add(InlineKeyboardButton(text="🔔 Напомнить", callback_data=f"remind:{task_id}"))
+    
+    # Третья строка: Комментарии и Завершение
+    builder.add(InlineKeyboardButton(text="💬 Комментарии", callback_data=f"view_comments_{task_id}")) # НОВАЯ КНОПКА
     builder.add(InlineKeyboardButton(text="✅ Выполнено", callback_data=f"done:{task_id}"))
+
+    # Четвертая строка: Удаление и Назад
     builder.add(InlineKeyboardButton(text="🗑 Удалить", callback_data=f"delete:{task_id}"))
     builder.add(InlineKeyboardButton(text="◀️ Назад", callback_data=f"tasks:{workspace_id}"))
     
-    builder.adjust(2, 2, 2, 1)
+    builder.adjust(2, 2, 2, 2)
     return builder.as_markup()
 
 
@@ -163,4 +171,16 @@ def get_cancel_keyboard() -> InlineKeyboardMarkup:
     """Кнопка отмены"""
     builder = InlineKeyboardBuilder()
     builder.add(InlineKeyboardButton(text="❌ Отмена", callback_data="cancel"))
+
     return builder.as_markup()
+
+def back_to_task_kb(task_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура для навигации в меню комментариев."""
+    kb = [
+        [
+            InlineKeyboardButton(text="✍️ Добавить комментарий", callback_data=f"add_comment_{task_id}"),
+            # Внимание: здесь мы используем callback "task:123" вместо "view_task_123"
+            InlineKeyboardButton(text="⬅️ Назад к задаче", callback_data=f"task:{task_id}")
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=kb)
