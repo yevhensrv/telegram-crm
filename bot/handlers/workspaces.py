@@ -1,3 +1,4 @@
+# Файл: bot/handlers/workspaces.py
 """
 Управление пространствами
 """
@@ -82,6 +83,9 @@ async def callback_workspace(callback: CallbackQuery, state: FSMContext):
         )
         await state.set_state(WorkspaceStates.waiting_invite_code)
         await callback.answer()
+        return
+    
+    if action == "list":
         return
     
     # Открываем пространство
