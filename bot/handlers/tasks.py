@@ -1,3 +1,4 @@
+# Файл: bot/handlers/tasks.py
 """
 Управление задачами
 """
@@ -263,7 +264,6 @@ async def callback_set_priority(callback: CallbackQuery):
     priority_names = {"high": "🔴 Высокий", "medium": "🟡 Средний", "low": "🟢 Низкий"}
     await callback.answer(f"✅ Приоритет: {priority_names[priority]}", show_alert=True)
     
-    # Возвращаемся к задаче
     task = await db.get_task(task_id)
     status_names = {"todo": "⬜ Не начата", "in_progress": "🔄 В работе", "done": "✅ Выполнена"}
     
@@ -315,7 +315,6 @@ async def callback_set_stage(callback: CallbackQuery):
     await db.update_task(task_id, stage_id=stage_id)
     await callback.answer("✅ Этап изменён!", show_alert=True)
     
-    # Возвращаемся к задаче
     task = await db.get_task(task_id)
     priority_names = {"high": "🔴 Высокий", "medium": "🟡 Средний", "low": "🟢 Низкий"}
     status_names = {"todo": "⬜ Не начата", "in_progress": "🔄 В работе", "done": "✅ Выполнена"}
@@ -352,7 +351,6 @@ async def callback_done(callback: CallbackQuery):
     else:
         await callback.answer("⬜ Задача открыта заново", show_alert=True)
     
-    # Обновляем отображение
     task = await db.get_task(task_id)
     priority_names = {"high": "🔴 Высокий", "medium": "🟡 Средний", "low": "🟢 Низкий"}
     status_names = {"todo": "⬜ Не начата", "in_progress": "🔄 В работе", "done": "✅ Выполнена"}
@@ -399,7 +397,6 @@ async def callback_confirm_delete(callback: CallbackQuery):
     await db.delete_task(task_id)
     await callback.answer("✅ Задача удалена!", show_alert=True)
     
-    # Показываем список задач
     tasks = await db.get_tasks(workspace_id)
     workspace = await db.get_workspace(workspace_id)
     
@@ -432,7 +429,7 @@ async def callback_funnel(callback: CallbackQuery):
         await callback.answer("❌ Воронки не найдены", show_alert=True)
         return
     
-    funnel = funnels[0]  # Берём первую воронку
+    funnel = funnels[0]
     stages = await db.get_funnel_stages(funnel["id"])
     
     text = f"📊 **{funnel['name']}**\n\n"
