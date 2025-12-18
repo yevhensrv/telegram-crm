@@ -169,7 +169,18 @@ async def init_database():
         """)
         
         await db.commit()
-
+        # Комментарии к задачам (НОВАЯ ТАБЛИЦА)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS task_comments (
+                id INTEGER PRIMARY KEY,
+                task_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                comment_text TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        """)
     # СРАЗУ ПОСЛЕ создания запускаем проверку на новые колонки
     await check_and_update_schema()
     print("✅ База данных готова и проверена!")
@@ -601,3 +612,29 @@ async def delete_note(note_id: int) -> bool:
         await db.execute("DELETE FROM notes WHERE id = ?", (note_id,))
         await db.commit()
         return True
+
+# ==================== КОММЕНТАРИИ К ЗАДАЧАМ ====================
+
+async def add_task_comment(task_id: int, user_id: int, comment_text: str) -> int:
+    """Добавить новый комментарий к задаче."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            "INSERT INTO task_comments (task_id, user_id, comment_text) VALUES (?, ?, ?)",
+            (task_id, user_id, comment_text)
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+async def get_task_comments(task_id: int) -> List[Dict]:
+    """Получить все комментарии для задачи, включая информацию о пользователе."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("""
+            SELECT tc.*, u.username, u.full_name
+            FROM task_comments tc
+            JOIN users u ON tc.user_id = u.id
+            WHERE tc.task_id = ?
+            ORDER BY tc.created_at ASC
+        """, (task_id,))
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
