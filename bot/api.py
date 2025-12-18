@@ -16,7 +16,7 @@ from bot import database as db
 # -------------------------------------------------------------
 # 1. ОСНОВНОЕ FASTAPI ПРИЛОЖЕНИЕ (для запуска Uvicorn)
 # -------------------------------------------------------------
-api_app = FastAPI(title="CRM Mini App") # ПЕРЕИМЕНОВАНО
+api_app = FastAPI(title="CRM Mini App")
 
 # Разрешаем запросы отовсюду
 api_app.add_middleware(
@@ -30,7 +30,7 @@ api_app.add_middleware(
 # -------------------------------------------------------------
 # 2. РОУТЕР ДЛЯ API ЭНДПОИНТОВ (для подключения к main.py)
 # -------------------------------------------------------------
-router = APIRouter(prefix="/api") # Роутер, который будет импортирован main.py
+router = APIRouter(prefix="/api")
 
 # Путь к webapp
 WEBAPP_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "webapp")
@@ -118,10 +118,10 @@ async def get_js():
     raise HTTPException(status_code=404)
 
 
-# ==================== API ПОЛЬЗОВАТЕЛЯ (Привязаны к router) ====================
+# ==================== API ПОЛЬЗОВАТЕЛЯ ====================
 
-@router.get("/user/{telegram_id}") 
-async def get_user_data(telegram_id: int): 
+@router.get("/user/{telegram_id}")
+async def get_user_data(telegram_id: int):
     user = await db.get_user(telegram_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -145,7 +145,7 @@ async def get_user_data(telegram_id: int):
     }
 
 
-# ==================== API ПРОСТРАНСТВ (Привязаны к router) ====================
+# ==================== API ПРОСТРАНСТВ ====================
 
 @router.get("/workspace/{workspace_id}")
 async def get_workspace(workspace_id: int):
@@ -174,7 +174,7 @@ async def get_workspace(workspace_id: int):
     }
 
 
-@router.get("/workspace/{workspace_id}/members") # УДАЛЕН ПРЕФИКС /api/
+@router.get("/workspace/{workspace_id}/members")
 async def get_members(workspace_id: int):
     """Получить участников пространства"""
     members = await db.get_workspace_members(workspace_id)
@@ -248,7 +248,6 @@ async def create_task(workspace_id: int, telegram_id: int, task: TaskCreate):
     if not user:
         raise HTTPException(status_code=404)
     
-    # Если указан username для назначения
     assigned_to = None
     if task.assigned_username:
         assigned_user = await db.get_user_by_username(task.assigned_username)
@@ -293,7 +292,6 @@ async def update_task(task_id: int, task: TaskUpdate):
         clean_username = task.assigned_username.replace('@', '') if task.assigned_username else None
         data["assigned_username"] = clean_username
         
-        # Находим user_id по username
         if clean_username:
             assigned_user = await db.get_user_by_username(clean_username)
             if assigned_user:
@@ -445,6 +443,3 @@ async def get_role_presets():
             }
         ]
     }
-
-# В конце файла нам нужно прикрепить роутер к api_app.
-# api_app.include_router(router)
