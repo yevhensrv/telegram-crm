@@ -6,15 +6,22 @@
 import os
 from dotenv import load_dotenv
 
-# Загружаем переменные из файла .env
+# Загружаем переменные из файла .env (если работаем локально)
 load_dotenv()
 
-# Токен бота (берём из .env файла)
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+# Токен бота
+TOKEN = os.getenv("BOT_TOKEN") 
 
-# URL веб-приложения (пока оставим пустым)
-WEBAPP_URL = os.getenv("WEBAPP_URL", "")
+# Основной URL сервиса Render, который будет использоваться для Webhook
+APP_BASE_URL = os.getenv("APP_BASE_URL")
 
-# Проверка что токен есть
-if not BOT_TOKEN:
-    raise ValueError("❌ Не найден BOT_TOKEN в файле .env!")
+# URL веб-приложения (Mini App), обычно совпадает с APP_BASE_URL
+WEBAPP_URL = os.getenv("WEBAPP_URL") or APP_BASE_URL # Используем APP_BASE_URL, если WEBAPP_URL не задан
+
+# Проверка, что токен есть
+if not TOKEN:
+    raise ValueError("❌ Не найден BOT_TOKEN!")
+
+# Проверка, что установлен APP_BASE_URL для Webhook на Render
+if not APP_BASE_URL and os.getenv("RENDER"):
+    raise ValueError("❌ Переменная APP_BASE_URL должна быть установлена для работы на Render!")
