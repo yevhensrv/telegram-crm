@@ -16,7 +16,7 @@ from bot import database as db
 # -------------------------------------------------------------
 # 1. ОСНОВНОЕ FASTAPI ПРИЛОЖЕНИЕ (для запуска Uvicorn)
 # -------------------------------------------------------------
-api_app = FastAPI(title="CRM Mini App") # ПЕРЕИМЕНОВАНО в api_app
+api_app = FastAPI(title="CRM Mini App") # ПЕРЕИМЕНОВАНО
 
 # Разрешаем запросы отовсюду
 api_app.add_middleware(
@@ -28,16 +28,16 @@ api_app.add_middleware(
 )
 
 # -------------------------------------------------------------
-# 2. РОУТЕР ДЛЯ API ЭНДПОИНТОВ (для подключения к боту в main.py)
+# 2. РОУТЕР ДЛЯ API ЭНДПОИНТОВ (для подключения к main.py)
 # -------------------------------------------------------------
-router = APIRouter() # НОВЫЙ ОБЪЕКТ, КОТОРЫЙ ИМПОРТИРУЕТ main.py
+router = APIRouter(prefix="/api") # Роутер, который будет импортирован main.py
 
 # Путь к webapp
 WEBAPP_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "webapp")
 
 
 # ==================== МОДЕЛИ ====================
-# (Оставляем твои модели без изменений)
+
 class TaskCreate(BaseModel):
     title: str
     description: Optional[str] = None
@@ -45,7 +45,8 @@ class TaskCreate(BaseModel):
     due_date: Optional[str] = None
     due_time: Optional[str] = None
     assigned_username: Optional[str] = None
-# ... (и так далее, все твои остальные модели)
+
+
 class TaskUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
@@ -55,6 +56,8 @@ class TaskUpdate(BaseModel):
     due_date: Optional[str] = None
     due_time: Optional[str] = None
     assigned_username: Optional[str] = None
+
+
 class MemberAdd(BaseModel):
     username: str
     role: str = "member"
@@ -63,6 +66,8 @@ class MemberAdd(BaseModel):
     can_delete_tasks: bool = False
     can_assign_tasks: bool = False
     can_manage_members: bool = False
+
+
 class MemberUpdate(BaseModel):
     role: Optional[str] = None
     custom_role: Optional[str] = None
@@ -70,11 +75,15 @@ class MemberUpdate(BaseModel):
     can_delete_tasks: Optional[bool] = None
     can_assign_tasks: Optional[bool] = None
     can_manage_members: Optional[bool] = None
+
+
 class NoteCreate(BaseModel):
     title: str
     content: Optional[str] = None
     note_date: Optional[str] = None
     color: str = "#ffc107"
+
+
 class NoteUpdate(BaseModel):
     title: Optional[str] = None
     content: Optional[str] = None
@@ -82,8 +91,7 @@ class NoteUpdate(BaseModel):
     color: Optional[str] = None
 
 
-# ==================== СТРАНИЦЫ ====================
-# Эти хэндлеры привязываем к api_app, а не к router
+# ==================== СТРАНИЦЫ (Привязаны к api_app) ====================
 
 @api_app.get("/", response_class=HTMLResponse)
 async def index():
@@ -110,10 +118,10 @@ async def get_js():
     raise HTTPException(status_code=404)
 
 
-# ==================== API ЭНДПОИНТЫ (ПРИВЯЗЫВАЕМ К router) ====================
+# ==================== API ПОЛЬЗОВАТЕЛЯ (Привязаны к router) ====================
 
-@router.get("/user/{telegram_id}") # Было @app.get, стало @router.get
-async def get_user_data(telegram_id: int): # Переименовано, чтобы не конфликтовать с db.get_user
+@router.get("/user/{telegram_id}") 
+async def get_user_data(telegram_id: int): 
     user = await db.get_user(telegram_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -136,6 +144,8 @@ async def get_user_data(telegram_id: int): # Переименовано, что�
         }
     }
 
+
+# ==================== API ПРОСТРАНСТВ (Привязаны к router) ====================
 
 @router.get("/workspace/{workspace_id}")
 async def get_workspace(workspace_id: int):
@@ -164,30 +174,277 @@ async def get_workspace(workspace_id: int):
     }
 
 
-# ... (ПОВТОРИТЕ ЭТО ДЛЯ ВСЕХ ОСТАЛЬНЫХ ЭНДПОИНТОВ, ЗАМЕНЯЯ @app.get/post/put/delete НА @router.get/post/put/delete) ...
-
-# === Остальные API (Workspace, Tasks, Notes, Roles) ===
-# Просто замените @app. на @router. в каждом хэндлере ниже.
-# Например:
-# Было: @app.get("/api/workspace/{workspace_id}/members")
-# Стало: @router.get("/workspace/{workspace_id}/members")
-# *Удаляем "/api" из роутера, так как он будет добавлен в main.py*
-
-# Я привел только начало, но тебе нужно заменить @app. на @router. ВО ВСЕХ ФУНКЦИЯХ API!
-
-# ... (ПРИМЕР ДЛЯ СЛЕДУЮЩЕЙ ФУНКЦИИ)
-
-@router.get("/workspace/{workspace_id}/members") 
+@router.get("/workspace/{workspace_id}/members") # УДАЛЕН ПРЕФИКС /api/
 async def get_members(workspace_id: int):
     """Получить участников пространства"""
     members = await db.get_workspace_members(workspace_id)
     return {"members": members}
+
+
+@router.post("/workspace/{workspace_id}/members")
+async def add_member(workspace_id: int, member: MemberAdd):
+    """Добавить участника по username"""
+    user = await db.get_user_by_username(member.username)
     
-# ... (ПРОДОЛЖАЙТЕ ДЛЯ ВСЕГО ФАЙЛА)
-# ...
+    if not user:
+        raise HTTPException(status_code=404, detail=f"Пользователь @{member.username} не найден. Он должен сначала написать боту /start")
+    
+    permissions = {
+        "can_edit_tasks": member.can_edit_tasks,
+        "can_delete_tasks": member.can_delete_tasks,
+        "can_assign_tasks": member.can_assign_tasks,
+        "can_manage_members": member.can_manage_members
+    }
+    
+    success = await db.add_member_to_workspace(
+        workspace_id, user["id"], member.role, member.custom_role, permissions
+    )
+    
+    if not success:
+        raise HTTPException(status_code=400, detail="Пользователь уже в команде")
+    
+    members = await db.get_workspace_members(workspace_id)
+    return {"success": True, "members": members}
 
-# ==================== КОНЕЦ ФАЙЛА ====================
 
-# Важно: Все API-маршруты, которые были @app.get("/api/..."),
-# должны стать @router.get("/..."), поскольку префикс "/api" 
-# мы добавим в main.py
+@router.put("/workspace/{workspace_id}/members/{user_id}")
+async def update_member(workspace_id: int, user_id: int, member: MemberUpdate):
+    """Обновить роль участника"""
+    permissions = {}
+    if member.can_edit_tasks is not None:
+        permissions["can_edit_tasks"] = member.can_edit_tasks
+    if member.can_delete_tasks is not None:
+        permissions["can_delete_tasks"] = member.can_delete_tasks
+    if member.can_assign_tasks is not None:
+        permissions["can_assign_tasks"] = member.can_assign_tasks
+    if member.can_manage_members is not None:
+        permissions["can_manage_members"] = member.can_manage_members
+    
+    await db.update_member_role(
+        workspace_id, user_id, 
+        role=member.role, 
+        custom_role=member.custom_role,
+        permissions=permissions if permissions else None
+    )
+    
+    members = await db.get_workspace_members(workspace_id)
+    return {"success": True, "members": members}
+
+
+@router.delete("/workspace/{workspace_id}/members/{user_id}")
+async def remove_member(workspace_id: int, user_id: int):
+    """Удалить участника"""
+    await db.remove_member_from_workspace(workspace_id, user_id)
+    members = await db.get_workspace_members(workspace_id)
+    return {"success": True, "members": members}
+
+
+# ==================== API ЗАДАЧ ====================
+
+@router.post("/tasks/{workspace_id}/{telegram_id}")
+async def create_task(workspace_id: int, telegram_id: int, task: TaskCreate):
+    """Создать задачу"""
+    user = await db.get_user(telegram_id)
+    if not user:
+        raise HTTPException(status_code=404)
+    
+    # Если указан username для назначения
+    assigned_to = None
+    if task.assigned_username:
+        assigned_user = await db.get_user_by_username(task.assigned_username)
+        if assigned_user:
+            assigned_to = assigned_user["id"]
+    
+    task_id = await db.create_task(
+        workspace_id=workspace_id,
+        title=task.title,
+        created_by=user["id"],
+        description=task.description,
+        priority=task.priority,
+        due_date=task.due_date,
+        due_time=task.due_time,
+        assigned_to=assigned_to,
+        assigned_username=task.assigned_username.replace('@', '') if task.assigned_username else None
+    )
+    
+    return {"task": await db.get_task(task_id)}
+
+
+@router.put("/task/{task_id}")
+async def update_task(task_id: int, task: TaskUpdate):
+    """Обновить задачу"""
+    data = {}
+    
+    if task.title is not None:
+        data["title"] = task.title
+    if task.description is not None:
+        data["description"] = task.description
+    if task.priority is not None:
+        data["priority"] = task.priority
+    if task.status is not None:
+        data["status"] = task.status
+    if task.stage_id is not None:
+        data["stage_id"] = task.stage_id
+    if task.due_date is not None:
+        data["due_date"] = task.due_date if task.due_date else None
+    if task.due_time is not None:
+        data["due_time"] = task.due_time if task.due_time else None
+    if task.assigned_username is not None:
+        clean_username = task.assigned_username.replace('@', '') if task.assigned_username else None
+        data["assigned_username"] = clean_username
+        
+        # Находим user_id по username
+        if clean_username:
+            assigned_user = await db.get_user_by_username(clean_username)
+            if assigned_user:
+                data["assigned_to"] = assigned_user["id"]
+        else:
+            data["assigned_to"] = None
+    
+    if data:
+        await db.update_task(task_id, **data)
+    
+    return {"task": await db.get_task(task_id)}
+
+
+@router.delete("/task/{task_id}")
+async def delete_task(task_id: int):
+    """Удалить задачу"""
+    await db.delete_task(task_id)
+    return {"success": True}
+
+
+@router.post("/task/{task_id}/toggle")
+async def toggle_task(task_id: int):
+    """Переключить статус задачи"""
+    task = await db.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404)
+    
+    new_status = "todo" if task.get("status") == "done" else "done"
+    await db.update_task(task_id, status=new_status)
+    return {"task": await db.get_task(task_id)}
+
+
+@router.post("/task/{task_id}/move/{stage_id}")
+async def move_task(task_id: int, stage_id: int):
+    """Переместить задачу"""
+    await db.update_task(task_id, stage_id=stage_id)
+    return {"task": await db.get_task(task_id)}
+
+
+@router.post("/task/{task_id}/assign")
+async def assign_task(task_id: int, username: str):
+    """Назначить задачу на пользователя"""
+    clean_username = username.replace('@', '')
+    
+    user = await db.get_user_by_username(clean_username)
+    assigned_to = user["id"] if user else None
+    
+    await db.update_task(task_id, assigned_username=clean_username, assigned_to=assigned_to)
+    return {"task": await db.get_task(task_id)}
+
+
+# ==================== API ЗАМЕТОК ====================
+
+@router.get("/notes/{workspace_id}")
+async def get_notes(workspace_id: int, date: Optional[str] = None):
+    """Получить заметки"""
+    notes = await db.get_notes(workspace_id, date)
+    return {"notes": notes}
+
+
+@router.post("/notes/{workspace_id}/{telegram_id}")
+async def create_note(workspace_id: int, telegram_id: int, note: NoteCreate):
+    """Создать заметку"""
+    user = await db.get_user(telegram_id)
+    if not user:
+        raise HTTPException(status_code=404)
+    
+    note_id = await db.create_note(
+        workspace_id=workspace_id,
+        user_id=user["id"],
+        title=note.title,
+        content=note.content,
+        note_date=note.note_date,
+        color=note.color
+    )
+    
+    notes = await db.get_notes(workspace_id)
+    return {"note_id": note_id, "notes": notes}
+
+
+@router.put("/note/{note_id}")
+async def update_note(note_id: int, note: NoteUpdate):
+    """Обновить заметку"""
+    data = {k: v for k, v in note.dict().items() if v is not None}
+    if data:
+        await db.update_note(note_id, **data)
+    
+    return {"success": True}
+
+
+@router.delete("/note/{note_id}")
+async def delete_note(note_id: int):
+    """Удалить заметку"""
+    await db.delete_note(note_id)
+    return {"success": True}
+
+
+# ==================== ПРЕДУСТАНОВЛЕННЫЕ РОЛИ ====================
+
+@router.get("/roles/presets")
+async def get_role_presets():
+    """Получить предустановленные роли"""
+    return {
+        "presets": [
+            {
+                "id": "pm",
+                "name": "PM (Project Manager)",
+                "description": "Полный доступ к управлению",
+                "can_edit_tasks": True,
+                "can_delete_tasks": True,
+                "can_assign_tasks": True,
+                "can_manage_members": True
+            },
+            {
+                "id": "lead",
+                "name": "НП (Начальник производства)",
+                "description": "Полный доступ к управлению",
+                "can_edit_tasks": True,
+                "can_delete_tasks": True,
+                "can_assign_tasks": True,
+                "can_manage_members": True
+            },
+            {
+                "id": "team_lead",
+                "name": "СК (Старший команды)",
+                "description": "Управление задачами и участниками",
+                "can_edit_tasks": True,
+                "can_delete_tasks": True,
+                "can_assign_tasks": True,
+                "can_manage_members": True
+            },
+            {
+                "id": "admin",
+                "name": "А (Админ)",
+                "description": "Управление участниками и дедлайнами",
+                "can_edit_tasks": True,
+                "can_delete_tasks": False,
+                "can_assign_tasks": True,
+                "can_manage_members": True
+            },
+            {
+                "id": "member",
+                "name": "Участник",
+                "description": "Базовые права",
+                "can_edit_tasks": True,
+                "can_delete_tasks": False,
+                "can_assign_tasks": False,
+                "can_manage_members": False
+            }
+        ]
+    }
+
+# В конце файла нам нужно прикрепить роутер к api_app.
+# api_app.include_router(router)
