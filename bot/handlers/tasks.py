@@ -3,6 +3,7 @@
 Управление задачами
 """
 
+import logging
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -19,6 +20,7 @@ from bot.keyboards import (
 )
 from bot.config import WEBAPP_URL
 
+logger = logging.getLogger(__name__)
 router = Router()
 
 
@@ -35,6 +37,8 @@ class TaskStates(StatesGroup):
 @router.message(F.text == "📋 Мои задачи")
 async def show_my_tasks(message: Message):
     """Показать задачи из личного пространства"""
+    logger.info(f"=== SHOW MY TASKS from {message.from_user.id} ===")
+    
     user = await db.get_user(message.from_user.id)
     if not user:
         await message.answer("❌ Отправьте /start")
@@ -70,6 +74,8 @@ async def show_my_tasks(message: Message):
 @router.callback_query(F.data.startswith("tasks:"))
 async def callback_tasks(callback: CallbackQuery):
     """Список задач пространства"""
+    logger.info(f"=== CALLBACK TASKS: {callback.data} ===")
+    
     workspace_id = int(callback.data.split(":")[1])
     tasks = await db.get_tasks(workspace_id)
     workspace = await db.get_workspace(workspace_id)
@@ -98,8 +104,11 @@ async def callback_tasks(callback: CallbackQuery):
 @router.message(F.text == "➕ Новая задача")
 async def new_task_start(message: Message, state: FSMContext):
     """Начало создания задачи"""
+    logger.info(f"=== NEW TASK BUTTON from {message.from_user.id} ===")
+    
     user = await db.get_user(message.from_user.id)
     if not user:
+        logger.warning("User not found!")
         await message.answer("❌ Отправьте /start")
         return
     
@@ -113,11 +122,17 @@ async def new_task_start(message: Message, state: FSMContext):
             parse_mode="Markdown"
         )
         await state.set_state(TaskStates.waiting_title)
+        logger.info("State set to waiting_title")
+    else:
+        logger.warning("No personal workspace!")
+        await message.answer("❌ Личное пространство не найдено. Отправьте /start")
 
 
 @router.callback_query(F.data.startswith("newtask:"))
 async def callback_new_task(callback: CallbackQuery, state: FSMContext):
     """Создание задачи в конкретном пространстве"""
+    logger.info(f"=== CALLBACK NEW TASK: {callback.data} ===")
+    
     workspace_id = int(callback.data.split(":")[1])
     await state.update_data(workspace_id=workspace_id)
     
@@ -132,6 +147,8 @@ async def callback_new_task(callback: CallbackQuery, state: FSMContext):
 @router.message(TaskStates.waiting_title)
 async def process_task_title(message: Message, state: FSMContext):
     """Получаем название задачи"""
+    logger.info(f"=== TASK TITLE: {message.text} ===")
+    
     await state.update_data(title=message.text)
     
     await message.answer(
@@ -144,6 +161,8 @@ async def process_task_title(message: Message, state: FSMContext):
 @router.message(TaskStates.waiting_description)
 async def process_task_description(message: Message, state: FSMContext):
     """Создаём задачу"""
+    logger.info(f"=== TASK DESCRIPTION: {message.text} ===")
+    
     data = await state.get_data()
     title = data["title"]
     workspace_id = data["workspace_id"]
@@ -157,6 +176,8 @@ async def process_task_description(message: Message, state: FSMContext):
         created_by=user["id"],
         description=description
     )
+    
+    logger.info(f"=== TASK CREATED: {task_id} ===")
     
     await message.answer(
         f"✅ **Задача создана!**\n\n"
@@ -174,6 +195,8 @@ async def process_task_description(message: Message, state: FSMContext):
 @router.callback_query(F.data.startswith("task:"))
 async def callback_task(callback: CallbackQuery):
     """Просмотр задачи"""
+    logger.info(f"=== VIEW TASK: {callback.data} ===")
+    
     task_id = int(callback.data.split(":")[1])
     task = await db.get_task(task_id)
     
@@ -209,6 +232,8 @@ async def callback_task(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("edit:"))
 async def callback_edit(callback: CallbackQuery, state: FSMContext):
     """Редактировать название"""
+    logger.info(f"=== EDIT TASK: {callback.data} ===")
+    
     task_id = int(callback.data.split(":")[1])
     await state.update_data(editing_task_id=task_id)
     
@@ -223,6 +248,8 @@ async def callback_edit(callback: CallbackQuery, state: FSMContext):
 @router.message(TaskStates.editing_title)
 async def process_edit_title(message: Message, state: FSMContext):
     """Сохраняем новое название"""
+    logger.info(f"=== EDIT TITLE: {message.text} ===")
+    
     data = await state.get_data()
     task_id = data["editing_task_id"]
     
@@ -242,6 +269,8 @@ async def process_edit_title(message: Message, state: FSMContext):
 @router.callback_query(F.data.startswith("priority:"))
 async def callback_priority(callback: CallbackQuery):
     """Выбор приоритета"""
+    logger.info(f"=== PRIORITY: {callback.data} ===")
+    
     task_id = int(callback.data.split(":")[1])
     
     await callback.message.edit_text(
@@ -255,6 +284,8 @@ async def callback_priority(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("setprio:"))
 async def callback_set_priority(callback: CallbackQuery):
     """Установка приоритета"""
+    logger.info(f"=== SET PRIORITY: {callback.data} ===")
+    
     parts = callback.data.split(":")
     task_id = int(parts[1])
     priority = parts[2]
@@ -288,6 +319,8 @@ async def callback_set_priority(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("stage:"))
 async def callback_stage(callback: CallbackQuery):
     """Выбор этапа"""
+    logger.info(f"=== STAGE: {callback.data} ===")
+    
     task_id = int(callback.data.split(":")[1])
     task = await db.get_task(task_id)
     
@@ -308,6 +341,8 @@ async def callback_stage(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("setstage:"))
 async def callback_set_stage(callback: CallbackQuery):
     """Установка этапа"""
+    logger.info(f"=== SET STAGE: {callback.data} ===")
+    
     parts = callback.data.split(":")
     task_id = int(parts[1])
     stage_id = int(parts[2])
@@ -340,6 +375,8 @@ async def callback_set_stage(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("done:"))
 async def callback_done(callback: CallbackQuery):
     """Отметить как выполненную"""
+    logger.info(f"=== DONE: {callback.data} ===")
+    
     task_id = int(callback.data.split(":")[1])
     task = await db.get_task(task_id)
     
@@ -376,6 +413,8 @@ async def callback_done(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("delete:"))
 async def callback_delete(callback: CallbackQuery):
     """Подтверждение удаления"""
+    logger.info(f"=== DELETE: {callback.data} ===")
+    
     task_id = int(callback.data.split(":")[1])
     task = await db.get_task(task_id)
     
@@ -390,6 +429,8 @@ async def callback_delete(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("confirm_del:"))
 async def callback_confirm_delete(callback: CallbackQuery):
     """Удаление задачи"""
+    logger.info(f"=== CONFIRM DELETE: {callback.data} ===")
+    
     task_id = int(callback.data.split(":")[1])
     task = await db.get_task(task_id)
     workspace_id = task['workspace_id']
@@ -422,6 +463,8 @@ async def callback_confirm_delete(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("funnel:"))
 async def callback_funnel(callback: CallbackQuery):
     """Показать воронку"""
+    logger.info(f"=== FUNNEL: {callback.data} ===")
+    
     workspace_id = int(callback.data.split(":")[1])
     funnels = await db.get_funnels(workspace_id)
     
@@ -466,6 +509,8 @@ async def callback_funnel(callback: CallbackQuery):
 @router.callback_query(F.data == "cancel")
 async def callback_cancel(callback: CallbackQuery, state: FSMContext):
     """Отмена действия"""
+    logger.info(f"=== CANCEL ===")
+    
     await state.clear()
     await callback.message.edit_text("❌ Действие отменено")
     await callback.answer()
