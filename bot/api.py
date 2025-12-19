@@ -10,15 +10,17 @@ from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
 import os
+import logging
 
 from bot import database as db
 
+logger = logging.getLogger(__name__)
+
 # -------------------------------------------------------------
-# 1. ОСНОВНОЕ FASTAPI ПРИЛОЖЕНИЕ (для запуска Uvicorn)
+# 1. ОСНОВНОЕ FASTAPI ПРИЛОЖЕНИЕ
 # -------------------------------------------------------------
 api_app = FastAPI(title="CRM Mini App")
 
-# Разрешаем запросы отовсюду
 api_app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -28,12 +30,30 @@ api_app.add_middleware(
 )
 
 # -------------------------------------------------------------
-# 2. РОУТЕР ДЛЯ API ЭНДПОИНТОВ (для подключения к main.py)
+# 2. РОУТЕР ДЛЯ API ЭНДПОИНТОВ
 # -------------------------------------------------------------
 router = APIRouter(prefix="/api")
 
-# Путь к webapp
 WEBAPP_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "webapp")
+
+
+# ==================== ФУНКЦИЯ ОТПРАВКИ УВЕДОМЛЕНИЙ ====================
+
+async def send_notification(telegram_id: int, text: str):
+    """Отправить уведомление пользователю"""
+    try:
+        from bot.main import bot
+        from aiogram.enums import ParseMode
+        await bot.send_message(
+            chat_id=telegram_id,
+            text=text,
+            parse_mode=ParseMode.MARKDOWN
+        )
+        logger.info(f"Уведомление отправлено: {telegram_id}")
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка отправки уведомления: {e}")
+        return False
 
 
 # ==================== МОДЕЛИ ====================
@@ -91,7 +111,7 @@ class NoteUpdate(BaseModel):
     color: Optional[str] = None
 
 
-# ==================== СТРАНИЦЫ (Привязаны к api_app) ====================
+# ==================== СТРАНИЦЫ ====================
 
 @api_app.get("/", response_class=HTMLResponse)
 async def index():
@@ -176,18 +196,19 @@ async def get_workspace(workspace_id: int):
 
 @router.get("/workspace/{workspace_id}/members")
 async def get_members(workspace_id: int):
-    """Получить участников пространства"""
     members = await db.get_workspace_members(workspace_id)
     return {"members": members}
 
 
 @router.post("/workspace/{workspace_id}/members")
 async def add_member(workspace_id: int, member: MemberAdd):
-    """Добавить участника по username"""
     user = await db.get_user_by_username(member.username)
     
     if not user:
-        raise HTTPException(status_code=404, detail=f"Пользователь @{member.username} не найден. Он должен сначала написать боту /start")
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Пользователь @{member.username} не найден. Он должен сначала написать боту /start"
+        )
     
     permissions = {
         "can_edit_tasks": member.can_edit_tasks,
@@ -203,13 +224,21 @@ async def add_member(workspace_id: int, member: MemberAdd):
     if not success:
         raise HTTPException(status_code=400, detail="Пользователь уже в команде")
     
+    # Уведомляем пользователя о добавлении в команду
+    workspace = await db.get_workspace(workspace_id)
+    await send_notification(
+        user["telegram_id"],
+        f"👥 **Вас добавили в команду!**\n\n"
+        f"📂 Пространство: {workspace['name']}\n"
+        f"🎭 Роль: {member.custom_role or member.role}"
+    )
+    
     members = await db.get_workspace_members(workspace_id)
     return {"success": True, "members": members}
 
 
 @router.put("/workspace/{workspace_id}/members/{user_id}")
 async def update_member(workspace_id: int, user_id: int, member: MemberUpdate):
-    """Обновить роль участника"""
     permissions = {}
     if member.can_edit_tasks is not None:
         permissions["can_edit_tasks"] = member.can_edit_tasks
@@ -233,7 +262,6 @@ async def update_member(workspace_id: int, user_id: int, member: MemberUpdate):
 
 @router.delete("/workspace/{workspace_id}/members/{user_id}")
 async def remove_member(workspace_id: int, user_id: int):
-    """Удалить участника"""
     await db.remove_member_from_workspace(workspace_id, user_id)
     members = await db.get_workspace_members(workspace_id)
     return {"success": True, "members": members}
@@ -246,12 +274,22 @@ async def create_task(workspace_id: int, telegram_id: int, task: TaskCreate):
     """Создать задачу"""
     user = await db.get_user(telegram_id)
     if not user:
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
     
     assigned_to = None
+    assigned_user = None
+    clean_username = None
+    
+    # Проверяем существование назначенного пользователя
     if task.assigned_username:
-        assigned_user = await db.get_user_by_username(task.assigned_username)
-        if assigned_user:
+        clean_username = task.assigned_username.replace('@', '').strip()
+        if clean_username:
+            assigned_user = await db.get_user_by_username(clean_username)
+            if not assigned_user:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Пользователь @{clean_username} не найден. Он должен сначала написать боту /start"
+                )
             assigned_to = assigned_user["id"]
     
     task_id = await db.create_task(
@@ -263,8 +301,28 @@ async def create_task(workspace_id: int, telegram_id: int, task: TaskCreate):
         due_date=task.due_date,
         due_time=task.due_time,
         assigned_to=assigned_to,
-        assigned_username=task.assigned_username.replace('@', '') if task.assigned_username else None
+        assigned_username=clean_username
     )
+    
+    # Отправляем уведомление назначенному пользователю
+    if assigned_user and assigned_user["telegram_id"] != telegram_id:
+        priority_icons = {"high": "🔴", "medium": "🟡", "low": "🟢"}
+        priority_icon = priority_icons.get(task.priority, "🟡")
+        
+        notification_text = (
+            f"📋 **Вам назначена новая задача!**\n\n"
+            f"**{task.title}**\n"
+            f"{task.description or ''}\n\n"
+            f"{priority_icon} Приоритет: {task.priority}\n"
+            f"👤 От: @{user.get('username') or user.get('full_name', 'Пользователь')}"
+        )
+        
+        if task.due_date:
+            notification_text += f"\n📅 Срок: {task.due_date}"
+            if task.due_time:
+                notification_text += f" {task.due_time}"
+        
+        await send_notification(assigned_user["telegram_id"], notification_text)
     
     return {"task": await db.get_task(task_id)}
 
@@ -272,7 +330,13 @@ async def create_task(workspace_id: int, telegram_id: int, task: TaskCreate):
 @router.put("/task/{task_id}")
 async def update_task(task_id: int, task: TaskUpdate):
     """Обновить задачу"""
+    old_task = await db.get_task(task_id)
+    if not old_task:
+        raise HTTPException(status_code=404, detail="Задача не найдена")
+    
     data = {}
+    assigned_user = None
+    old_assigned_username = old_task.get("assigned_username")
     
     if task.title is not None:
         data["title"] = task.title
@@ -288,19 +352,49 @@ async def update_task(task_id: int, task: TaskUpdate):
         data["due_date"] = task.due_date if task.due_date else None
     if task.due_time is not None:
         data["due_time"] = task.due_time if task.due_time else None
+    
+    # Проверяем назначение пользователя
     if task.assigned_username is not None:
-        clean_username = task.assigned_username.replace('@', '') if task.assigned_username else None
+        clean_username = task.assigned_username.replace('@', '').strip() if task.assigned_username else None
         data["assigned_username"] = clean_username
         
         if clean_username:
             assigned_user = await db.get_user_by_username(clean_username)
-            if assigned_user:
-                data["assigned_to"] = assigned_user["id"]
+            if not assigned_user:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Пользователь @{clean_username} не найден. Он должен сначала написать боту /start"
+                )
+            data["assigned_to"] = assigned_user["id"]
         else:
             data["assigned_to"] = None
     
     if data:
         await db.update_task(task_id, **data)
+    
+    # Отправляем уведомление если назначен новый пользователь
+    new_username = data.get("assigned_username")
+    if assigned_user and new_username and new_username != old_assigned_username:
+        priority = task.priority or old_task.get("priority", "medium")
+        priority_icons = {"high": "🔴", "medium": "🟡", "low": "🟢"}
+        priority_icon = priority_icons.get(priority, "🟡")
+        
+        task_title = task.title or old_task.get("title", "")
+        task_desc = task.description if task.description is not None else old_task.get("description", "")
+        
+        notification_text = (
+            f"📋 **Вам назначена задача!**\n\n"
+            f"**{task_title}**\n"
+            f"{task_desc or ''}\n\n"
+            f"{priority_icon} Приоритет: {priority}"
+        )
+        
+        due_date = task.due_date if task.due_date is not None else old_task.get("due_date")
+        if due_date:
+            due_time = task.due_time if task.due_time is not None else old_task.get("due_time", "")
+            notification_text += f"\n📅 Срок: {due_date} {due_time or ''}".strip()
+        
+        await send_notification(assigned_user["telegram_id"], notification_text)
     
     return {"task": await db.get_task(task_id)}
 
@@ -331,30 +425,37 @@ async def move_task(task_id: int, stage_id: int):
     return {"task": await db.get_task(task_id)}
 
 
-@router.post("/task/{task_id}/assign")
-async def assign_task(task_id: int, username: str):
-    """Назначить задачу на пользователя"""
-    clean_username = username.replace('@', '')
-    
+# ==================== ПРОВЕРКА ПОЛЬЗОВАТЕЛЯ ====================
+
+@router.get("/check-user/{username}")
+async def check_user_exists(username: str):
+    """Проверить существует ли пользователь"""
+    clean_username = username.replace('@', '').strip()
     user = await db.get_user_by_username(clean_username)
-    assigned_to = user["id"] if user else None
     
-    await db.update_task(task_id, assigned_username=clean_username, assigned_to=assigned_to)
-    return {"task": await db.get_task(task_id)}
+    if user:
+        return {
+            "exists": True,
+            "username": user.get("username"),
+            "full_name": user.get("full_name")
+        }
+    else:
+        return {
+            "exists": False,
+            "message": f"Пользователь @{clean_username} не найден. Он должен написать боту /start"
+        }
 
 
 # ==================== API ЗАМЕТОК ====================
 
 @router.get("/notes/{workspace_id}")
 async def get_notes(workspace_id: int, date: Optional[str] = None):
-    """Получить заметки"""
     notes = await db.get_notes(workspace_id, date)
     return {"notes": notes}
 
 
 @router.post("/notes/{workspace_id}/{telegram_id}")
 async def create_note(workspace_id: int, telegram_id: int, note: NoteCreate):
-    """Создать заметку"""
     user = await db.get_user(telegram_id)
     if not user:
         raise HTTPException(status_code=404)
@@ -374,17 +475,14 @@ async def create_note(workspace_id: int, telegram_id: int, note: NoteCreate):
 
 @router.put("/note/{note_id}")
 async def update_note(note_id: int, note: NoteUpdate):
-    """Обновить заметку"""
     data = {k: v for k, v in note.dict().items() if v is not None}
     if data:
         await db.update_note(note_id, **data)
-    
     return {"success": True}
 
 
 @router.delete("/note/{note_id}")
 async def delete_note(note_id: int):
-    """Удалить заметку"""
     await db.delete_note(note_id)
     return {"success": True}
 
@@ -393,7 +491,6 @@ async def delete_note(note_id: int):
 
 @router.get("/roles/presets")
 async def get_role_presets():
-    """Получить предустановленные роли"""
     return {
         "presets": [
             {
@@ -407,7 +504,7 @@ async def get_role_presets():
             },
             {
                 "id": "lead",
-                "name": "НП (Начальник производства)",
+                "name": "Lead",
                 "description": "Полный доступ к управлению",
                 "can_edit_tasks": True,
                 "can_delete_tasks": True,
@@ -415,18 +512,9 @@ async def get_role_presets():
                 "can_manage_members": True
             },
             {
-                "id": "team_lead",
-                "name": "СК (Старший команды)",
-                "description": "Управление задачами и участниками",
-                "can_edit_tasks": True,
-                "can_delete_tasks": True,
-                "can_assign_tasks": True,
-                "can_manage_members": True
-            },
-            {
                 "id": "admin",
-                "name": "А (Админ)",
-                "description": "Управление участниками и дедлайнами",
+                "name": "Админ",
+                "description": "Управление участниками",
                 "can_edit_tasks": True,
                 "can_delete_tasks": False,
                 "can_assign_tasks": True,
