@@ -16,11 +16,15 @@ async def check_and_update_schema():
     """Добавляет недостающие колонки"""
     async with aiosqlite.connect(DATABASE_PATH) as db:
         required_columns = [
+            # workspace_members
             ("workspace_members", "custom_role", "TEXT"),
             ("workspace_members", "can_edit_tasks", "BOOLEAN DEFAULT TRUE"),
             ("workspace_members", "can_delete_tasks", "BOOLEAN DEFAULT FALSE"),
             ("workspace_members", "can_assign_tasks", "BOOLEAN DEFAULT FALSE"),
             ("workspace_members", "can_manage_members", "BOOLEAN DEFAULT FALSE"),
+            # tasks - НОВЫЕ КОЛОНКИ
+            ("tasks", "due_time", "TEXT"),
+            ("tasks", "assigned_username", "TEXT"),
         ]
         
         for table, column, col_type in required_columns:
