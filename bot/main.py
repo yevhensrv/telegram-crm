@@ -133,7 +133,6 @@ async def on_startup():
 async def on_shutdown():
     """Действия при остановке приложения"""
     try:
-        await bot.delete_webhook()
         await bot.session.close()
         logger.info("👋 Бот остановлен")
     except Exception as e:
@@ -161,3 +160,4 @@ if __name__ == "__main__":
         port=port,
         log_level="info"
     )
+
