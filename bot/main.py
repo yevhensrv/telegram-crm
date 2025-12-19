@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import os
-from fastapi import Request, status
+from fastapi import Request
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import Update
@@ -11,96 +11,153 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import uvicorn
 from aiogram.enums import ParseMode
 
-# Импорт конфигурации и обработчиков
-from bot.config import TOKEN, WEBAPP_URL, APP_BASE_URL 
+# Импорт конфигурации
+from bot.config import TOKEN, WEBAPP_URL, APP_BASE_URL
+
+# Импорт базы данных
 from bot.database import init_database
-from bot.handlers import start, workspaces, tasks, reminders, comments
+
+# Импорт API приложения и роутера
 from bot.api import api_app, router as api_router
 
+# Импорт роутеров бота
+from bot.handlers import routers
+
 # Настройка логов
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Инициализация бота и диспетчера
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-# Подключаем API роутер к приложению
+# Подключаем API роутер к FastAPI приложению
 api_app.include_router(api_router)
 
+# Регистрируем все роутеры бота
+for router in routers:
+    dp.include_router(router)
 
-# ----------------- АПС Планировщик для напоминаний -----------------
+
+# ==================== ПЛАНИРОВЩИК НАПОМИНАНИЙ ====================
 
 async def check_reminders_job(bot_instance: Bot):
-    from bot import database as db 
+    """Проверка и отправка напоминаний"""
+    from bot import database as db
     
     try:
         pending_reminders = await db.get_pending_reminders()
+        
         for reminder in pending_reminders:
-            text = f"🔔 **Напоминание о задаче:** {reminder['task_title']}"
             try:
+                text = f"🔔 **Напоминание о задаче:**\n\n📋 {reminder['task_title']}"
                 await bot_instance.send_message(
                     chat_id=reminder['telegram_id'],
                     text=text,
                     parse_mode=ParseMode.MARKDOWN
                 )
                 await db.mark_reminder_sent(reminder['id'])
+                logger.info(f"Напоминание {reminder['id']} отправлено")
             except Exception as e:
-                logging.error(f"Failed to send reminder {reminder['id']}: {e}")
+                logger.error(f"Ошибка отправки напоминания {reminder['id']}: {e}")
+                
     except Exception as e:
-        logging.error(f"Error in check_reminders_job: {e}")
+        logger.error(f"Ошибка в check_reminders_job: {e}")
 
 
-# ----------------- FastAPI/WEBHOOK ENDPOINT -----------------
+# ==================== WEBHOOK ENDPOINT ====================
 
-@api_app.post(f"/{TOKEN}")
+# Используем фиксированный путь вместо токена
+WEBHOOK_PATH = "/webhook"
+
+@api_app.post(WEBHOOK_PATH)
 async def telegram_webhook(request: Request):
+    """Обработка входящих обновлений от Telegram"""
     try:
         json_data = await request.json()
         update = Update(**json_data)
         await dp.feed_update(bot, update)
         return {"ok": True}
     except Exception as e:
-        logging.error(f"Unhandled error in webhook: {e}")
+        logger.error(f"Ошибка в webhook: {e}")
         return {"ok": False, "error": str(e)}
 
 
-# ----------------- STARTUP LOGIC -----------------
+# ==================== СОБЫТИЯ ЗАПУСКА/ОСТАНОВКИ ====================
 
 @api_app.on_event("startup")
-async def on_startup_event():
+async def on_startup():
+    """Действия при запуске приложения"""
+    
+    # Инициализируем базу данных
     await init_database()
+    logger.info("✅ База данных инициализирована")
     
-    # Проверяем наличие URL для вебхука
-    if not APP_BASE_URL:
-        logging.error("APP_BASE_URL environment variable is not set!")
-        print("⚠️ Бот запущен БЕЗ вебхука (APP_BASE_URL не установлен)")
-    else:
-        # Устанавливаем вебхук
-        webhook_url = f"{APP_BASE_URL}/{TOKEN}"
+    # Устанавливаем вебхук
+    if APP_BASE_URL:
+        # Убираем trailing slash если есть
+        base_url = APP_BASE_URL.rstrip('/')
+        webhook_url = f"{base_url}{WEBHOOK_PATH}"
+        
         try:
+            # Сначала удаляем старый webhook
+            await bot.delete_webhook(drop_pending_updates=True)
+            # Устанавливаем новый
             await bot.set_webhook(webhook_url)
-            logging.info(f"✅ Webhook установлен на: {webhook_url}")
+            logger.info(f"✅ Webhook установлен: {webhook_url}")
         except Exception as e:
-            logging.error(f"Failed to set webhook: {e}")
+            logger.error(f"❌ Ошибка установки webhook: {e}")
+    else:
+        logger.warning("⚠️ APP_BASE_URL не установлен, webhook не настроен")
     
-    # Настраиваем планировщик
+    # Запускаем планировщик напоминаний
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(check_reminders_job, 'interval', seconds=30, args=[bot])
+    scheduler.add_job(
+        check_reminders_job, 
+        'interval', 
+        seconds=30, 
+        args=[bot],
+        id='reminders_job',
+        replace_existing=True
+    )
     scheduler.start()
+    logger.info("✅ Планировщик напоминаний запущен")
     
-    print("🚀 Бот запущен и готов принимать вебхуки!")
+    print("🚀 Бот успешно запущен!")
 
 
-# ----------------- MAIN EXECUTION -----------------
+@api_app.on_event("shutdown")
+async def on_shutdown():
+    """Действия при остановке приложения"""
+    try:
+        await bot.delete_webhook()
+        await bot.session.close()
+        logger.info("👋 Бот остановлен")
+    except Exception as e:
+        logger.error(f"Ошибка при остановке: {e}")
 
-# Регистрация роутеров бота
-dp.include_router(start.router)
-dp.include_router(workspaces.router)
-dp.include_router(tasks.router)
-dp.include_router(reminders.router)
-dp.include_router(comments.router)
 
+# ==================== HEALTH CHECK ====================
+
+@api_app.get("/health")
+async def health_check():
+    """Проверка работоспособности"""
+    return {"status": "ok", "bot": "running"}
+
+
+# ==================== ТОЧКА ВХОДА ====================
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
-    uvicorn.run(api_app, host="0.0.0.0", port=port)
+    
+    print(f"🔧 Запуск на порту {port}...")
+    
+    uvicorn.run(
+        api_app,
+        host="0.0.0.0",
+        port=port,
+        log_level="info"
+    )
