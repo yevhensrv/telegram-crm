@@ -283,23 +283,33 @@
                 <div class="input-group">
                     <label>Приоритет</label>
                     <div class="priority-buttons">
-                        <button class="priority-btn" data-priority="low">
+                        <button type="button" class="priority-btn" data-priority="low">
                             <span>🟢</span>
                             <span>Низкий</span>
                         </button>
-                        <button class="priority-btn selected" data-priority="medium">
+                        <button type="button" class="priority-btn selected" data-priority="medium">
                             <span>🟡</span>
                             <span>Средний</span>
                         </button>
-                        <button class="priority-btn" data-priority="high">
+                        <button type="button" class="priority-btn" data-priority="high">
                             <span>🔴</span>
                             <span>Высокий</span>
                         </button>
                     </div>
                 </div>
+                <div class="input-row">
+                    <div class="input-group">
+                        <label>📅 Дата</label>
+                        <input type="date" id="task-due-date" class="input">
+                    </div>
+                    <div class="input-group">
+                        <label>⏰ Время</label>
+                        <input type="time" id="task-due-time" class="input">
+                    </div>
+                </div>
                 <div class="input-group">
-                    <label>Срок выполнения</label>
-                    <input type="date" id="task-due" class="input">
+                    <label>👤 Исполнитель</label>
+                    <input type="text" id="task-assignee" placeholder="@username" class="input">
                 </div>
             </div>
             <div class="modal-footer">
@@ -331,6 +341,16 @@
                     <div class="task-detail">
                         <span class="task-detail-label">🎯 Приоритет</span>
                         <span id="view-task-priority-text"></span>
+                    </div>
+                </div>
+                <div class="task-details-row">
+                    <div class="task-detail">
+                        <span class="task-detail-label">📅 Дедлайн</span>
+                        <span id="view-task-due">Не указан</span>
+                    </div>
+                    <div class="task-detail">
+                        <span class="task-detail-label">👤 Исполнитель</span>
+                        <span id="view-task-assignee">Не назначен</span>
                     </div>
                 </div>
                 <div class="task-detail">
